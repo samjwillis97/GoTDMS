@@ -10,3 +10,5 @@ GoTDMS Library
 - List Properties of Group or Channels
 - Close TDMS
 
+## How to List Contents
+

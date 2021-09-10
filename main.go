@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 	"io"
-	"encoding/hex"
+	"bytes"
 	"encoding/binary"
 )
 
@@ -45,8 +45,6 @@ func main() {
 	tocBitMaskBytes := make([]byte, 4)
 	_, err = io.ReadFull(file, tocBitMaskBytes)
 	tocBitMask := binary.LittleEndian.Uint32(tocBitMaskBytes)	
-	// log.Println("NEED TO FINISH TOC MASK")
-	// log.Println("ToC BitMask Bytes: ", tocBitMaskBytes)
 	log.Println("ToC BitMask: ", tocBitMask)
 
 	if ((0b10 & tocBitMask) == 0b10) {
@@ -74,8 +72,6 @@ func main() {
 	versionNumberBytes := make([]byte, 4)
 	_, err = io.ReadFull(file, versionNumberBytes)
 	versionNumber := binary.LittleEndian.Uint32(versionNumberBytes)
-	// log.Println("Version Number Bytes:", versionNumberBytes)
-	// log.Println("Version Number String", hex.EncodeToString(versionNumberBytes))
 	log.Println("Version Number: ", versionNumber)
 
 	// 8 Bytes - Length of Remaining Segment
@@ -104,22 +100,54 @@ func main() {
 	numObjectsBytes := make([]byte, 4)
 	_, err = io.ReadFull(file, numObjectsBytes)
 	numObjects := binary.LittleEndian.Uint32(numObjectsBytes)
-	log.Println("Number of Objects Bytes: ", numObjectsBytes)
-	log.Println("Number of Objects String: ", hex.EncodeToString(numObjectsBytes))
 	log.Println("Number of Objects: ", numObjects)
 
 	// Length of First Object Path
 	firstObjPathLengthBytes := make([]byte, 4)
 	_, err = io.ReadFull(file, firstObjPathLengthBytes)
 	firstObjPathLength := binary.LittleEndian.Uint32(firstObjPathLengthBytes)
-	log.Println("First Object Path Length Bytes: ", firstObjPathLengthBytes)
-	log.Println("First Object Path Length String: ", hex.EncodeToString(firstObjPathLengthBytes))
 	log.Println("First Object Path Length: ", firstObjPathLength)
 
 	// Read Object Path
 	firstObjPathBytes := make([]byte, firstObjPathLength)
 	_, err = io.ReadFull(file, firstObjPathBytes)
 	log.Println("First Object Path: ", string(firstObjPathBytes))
+
+	// Object
+	// Raw Data Index
+	// FF FF FF FF means there is no raw data
+	rawDataIndexBytes := make([]byte, 4)
+	_,err = io.ReadFull(file, rawDataIndexBytes)
+	log.Println("Raw Data Index: ", rawDataIndexBytes)
+	noRawDataValue := []byte{255, 255, 255, 255}
+	rawDataPresent := bytes.Compare(rawDataIndexBytes, noRawDataValue)
+	if rawDataPresent == 0 {
+		log.Println("No Raw Data Present")
+	} else {
+		log.Println("Raw Data Present")
+	}
+
+	// Group Properties
+	numGroupOnePropertiesBytes := make([]byte, 4)
+	_, err = io.ReadFull(file, numGroupOnePropertiesBytes)
+	numGroupOneProperties := binary.LittleEndian.Uint32(numGroupOnePropertiesBytes)
+	log.Println("Number of Group Properties: ", numGroupOneProperties)
+
+	// Length of First Property Name
+	firstPropertyNameLengthBytes := make([]byte, 4)
+	_, err = io.ReadFull(file, firstPropertyNameLengthBytes)
+	firstPropertyNameLength := binary.LittleEndian.Uint32(firstPropertyNameLengthBytes)
+	log.Println("First Property Name Length: ", firstPropertyNameLength)
+
+	// First Property Name
+	firstPropertyNameBytes := make([]byte, firstPropertyNameLength)
+	_, err = io.ReadFull(file, firstPropertyNameBytes)
+	log.Println("First Property Name: ", string(firstPropertyNameBytes))
+
+	// First Property DataType
+	firstPropertyDataTypeBytes := make([]byte, 4)
+	_, err = io.ReadFull(file, firstPropertyDataTypeBytes)
+	log.Println("First Property Data Type: ", firstPropertyDataTypeBytes)
 
 
 	if err != nil {
