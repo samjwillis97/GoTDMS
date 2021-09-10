@@ -98,7 +98,6 @@ func main() {
 
 
 	// MetaData
-	// var segment_position = 0
 
 	// Read Segment Metadata
 	// First 4 Bytes have number of objects in metadata
@@ -109,15 +108,18 @@ func main() {
 	log.Println("Number of Objects String: ", hex.EncodeToString(numObjectsBytes))
 	log.Println("Number of Objects: ", numObjects)
 
-	// Check for Object?
-
 	// Length of First Object Path
 	firstObjPathLengthBytes := make([]byte, 4)
 	_, err = io.ReadFull(file, firstObjPathLengthBytes)
 	firstObjPathLength := binary.LittleEndian.Uint32(firstObjPathLengthBytes)
 	log.Println("First Object Path Length Bytes: ", firstObjPathLengthBytes)
 	log.Println("First Object Path Length String: ", hex.EncodeToString(firstObjPathLengthBytes))
-	log.Println("First Object Path Length", firstObjPathLength)
+	log.Println("First Object Path Length: ", firstObjPathLength)
+
+	// Read Object Path
+	firstObjPathBytes := make([]byte, firstObjPathLength)
+	_, err = io.ReadFull(file, firstObjPathBytes)
+	log.Println("First Object Path: ", string(firstObjPathBytes))
 
 
 	if err != nil {
