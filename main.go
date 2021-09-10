@@ -8,6 +8,12 @@ import (
 	"encoding/binary"
 )
 
+type leadInData struct {
+	ToCMask uint32
+	versionNumber uint32
+	nextSegOffset uint64
+	rawDataOffset uint64
+}
 
 func main() {
 	initLogging()
@@ -20,8 +26,41 @@ func main() {
 	// Reading a TDMS File
 	// https://www.ni.com/en-au/support/documentation/supplemental/07/tdms-file-format-internal-structure.html
 
-	// Lead In
-	startPosition, err := file.Seek(0, 1)
+	// initLeadInData := readTDMSLeadIn(file, 0, 0)
+	readTDMSLeadIn(file, 0 , 0)
+	readTDMSMetaData(file, 0, 1)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	file.Close()
+}
+
+func initLogging() {
+	// If the file doesnt exit create it, or append to the file
+	file, err := os.OpenFile("log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil { log.Fatal(err) }
+	
+	// Creates a MultiWrite, duplicates its write sto all the provided writers
+	// In this instance, the file and stdout
+	mw := io.MultiWriter(os.Stdout, file)
+
+	log.SetOutput(mw)
+
+	log.Println("TDMS Reader Init")
+}
+
+// Reads the TDMS Lead-In
+// Starts at Byte Defined by Offset
+// When is the reference point for the offset
+// 0 = Beginning of File
+// 1 = Current Position
+// 2 = End of File
+func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
+	segmentStartPos, err := file.Seek(offset, whence)
+
+	log.Println("READING LEAD-IN")
 
 	// Starts with a 4-byte tag that identifies a TDMS Segment ("TDSm")
 	segStartTag :=make([]byte, 4)
@@ -29,7 +68,7 @@ func main() {
 	if string(segStartTag) != "TDSm" {
 		log.Fatal("Segment is not a TDMS")
 	}
-	log.Println("Valid TDMS Segment Starting at: ", startPosition)
+	log.Println("Valid TDMS Segment Starting at: ", segmentStartPos)
 
 	// 4 Byte ToC BitMask NEED TO WORK OUT
 	// kTocMetaData (1L << 1)					= 0b0000 0010			= 0x2
@@ -46,7 +85,6 @@ func main() {
 	_, err = io.ReadFull(file, tocBitMaskBytes)
 	tocBitMask := binary.LittleEndian.Uint32(tocBitMaskBytes)	
 	log.Println("ToC BitMask: ", tocBitMask)
-
 	if ((0b10 & tocBitMask) == 0b10) {
 		log.Println("Segment Contains Meta Data")	
 	}
@@ -92,83 +130,97 @@ func main() {
 	metaLength := binary.LittleEndian.Uint64(metaLengthBytes)
 	log.Println("Metadata Length: ", metaLength)
 
-
-	// MetaData
-
-	// Read Segment Metadata
-	// First 4 Bytes have number of objects in metadata
-	numObjectsBytes := make([]byte, 4)
-	_, err = io.ReadFull(file, numObjectsBytes)
-	numObjects := binary.LittleEndian.Uint32(numObjectsBytes)
-	log.Println("Number of Objects: ", numObjects)
-
-	// Length of First Object Path
-	firstObjPathLengthBytes := make([]byte, 4)
-	_, err = io.ReadFull(file, firstObjPathLengthBytes)
-	firstObjPathLength := binary.LittleEndian.Uint32(firstObjPathLengthBytes)
-	log.Println("First Object Path Length: ", firstObjPathLength)
-
-	// Read Object Path
-	firstObjPathBytes := make([]byte, firstObjPathLength)
-	_, err = io.ReadFull(file, firstObjPathBytes)
-	log.Println("First Object Path: ", string(firstObjPathBytes))
-
-	// Object
-	// Raw Data Index
-	// FF FF FF FF means there is no raw data
-	rawDataIndexBytes := make([]byte, 4)
-	_,err = io.ReadFull(file, rawDataIndexBytes)
-	log.Println("Raw Data Index: ", rawDataIndexBytes)
-	noRawDataValue := []byte{255, 255, 255, 255}
-	rawDataPresent := bytes.Compare(rawDataIndexBytes, noRawDataValue)
-	if rawDataPresent == 0 {
-		log.Println("No Raw Data Present")
-	} else {
-		log.Println("Raw Data Present")
-	}
-
-	// Group Properties
-	numGroupOnePropertiesBytes := make([]byte, 4)
-	_, err = io.ReadFull(file, numGroupOnePropertiesBytes)
-	numGroupOneProperties := binary.LittleEndian.Uint32(numGroupOnePropertiesBytes)
-	log.Println("Number of Group Properties: ", numGroupOneProperties)
-
-	// Length of First Property Name
-	firstPropertyNameLengthBytes := make([]byte, 4)
-	_, err = io.ReadFull(file, firstPropertyNameLengthBytes)
-	firstPropertyNameLength := binary.LittleEndian.Uint32(firstPropertyNameLengthBytes)
-	log.Println("First Property Name Length: ", firstPropertyNameLength)
-
-	// First Property Name
-	firstPropertyNameBytes := make([]byte, firstPropertyNameLength)
-	_, err = io.ReadFull(file, firstPropertyNameBytes)
-	log.Println("First Property Name: ", string(firstPropertyNameBytes))
-
-	// First Property DataType
-	firstPropertyDataTypeBytes := make([]byte, 4)
-	_, err = io.ReadFull(file, firstPropertyDataTypeBytes)
-	log.Println("First Property Data Type: ", firstPropertyDataTypeBytes)
-
-
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	file.Close()
+	return leadInData{
+		tocBitMask,
+		versionNumber,
+		segLength,
+		metaLength,
+	}
 }
 
-func initLogging() {
-	// If the file doesnt exit create it, or append to the file
-	file, err := os.OpenFile("log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil { log.Fatal(err) }
-	
-	// Creates a MultiWrite, duplicates its write sto all the provided writers
-	// In this instance, the file and stdout
-	mw := io.MultiWriter(os.Stdout, file)
+// Add Check for Raw Data Index
+func readTDMSMetaData(file *os.File, offset int64, whence int) {
+	log.Println("READING METADATA")
 
-	log.SetOutput(mw)
+	// First 4 Bytes have number of objects in metadata
+	numObjectsBytes := make([]byte, 4)
+	_, err := io.ReadFull(file, numObjectsBytes)
+	numObjects := binary.LittleEndian.Uint32(numObjectsBytes)
+	log.Println("Number of Objects: ", numObjects)
 
-	log.Println("TDMS Reader Init")
+	// var objects = make([]string, numObjects)
 
+	for i := uint32(0); i < numObjects; i++ {
+		// Length of Object Path
+		objPathLengthBytes := make([]byte, 4)
+		_, err = io.ReadFull(file, objPathLengthBytes)
+		objPathLength := binary.LittleEndian.Uint32(objPathLengthBytes)
+
+		// Read Object Path
+		objPathBytes := make([]byte, objPathLength)
+		_, err = io.ReadFull(file, objPathBytes)
+		log.Printf("Object %d Path: %s\n", i, string(objPathBytes))
+		// objects[i] = string(objPathBytes)
+
+		// Read Object Raw Data Index
+		// FF FF FF FF means there is no raw data
+		rawDataIndexBytes := make([]byte, 4)
+		_,err = io.ReadFull(file, rawDataIndexBytes)
+		noRawDataValue := []byte{255, 255, 255, 255}
+		rawDataPresent := bytes.Compare(rawDataIndexBytes, noRawDataValue)
+		if rawDataPresent == 0 {
+			log.Printf("Object %d No Raw Data Present\n", i)
+		} else {
+			log.Printf("Object %d Raw Data Present\n", i)
+		}
+
+		// Number of Object Properties
+		numGroupPropertiesBytes := make([]byte, 4)
+		_, err = io.ReadFull(file, numGroupPropertiesBytes)
+		numGroupProperties := binary.LittleEndian.Uint32(numGroupPropertiesBytes)
+		log.Printf("Number of Object %d Group Properties: %d\n", i, numGroupProperties)
+
+		for j := uint32(0); j < numGroupProperties; j++ {
+			// Length of Property Name
+			propertyNameLengthBytes := make([]byte, 4)
+			_, err = io.ReadFull(file, propertyNameLengthBytes)
+			propertyNameLength := binary.LittleEndian.Uint32(propertyNameLengthBytes)
+
+			// Property Name
+			propertyNameBytes := make([]byte, propertyNameLength)
+			_, err = io.ReadFull(file, propertyNameBytes)
+			log.Printf("Object %d Group %d Property Name: %s\n", i, j, string(propertyNameBytes))
+
+			// Property Data Type
+			// tdsTypeString			0x20
+			// tdsTypeBoolean			0x21
+			// tdsTypeTimeStamp		0x44
+			// Printed in Hex
+			propertyDataTypeBytes := make([]byte, 4)
+			_, err = io.ReadFull(file, propertyDataTypeBytes)
+			propertyDataType := binary.LittleEndian.Uint32(propertyDataTypeBytes)
+			switch propertyDataType {
+			case 0x20:
+				log.Printf("Object %d Group %d Property Data Type: String", i, j)
+
+				// Length of String
+				stringLengthBytes := make([]byte, 4)
+				_, err = io.ReadFull(file, stringLengthBytes)
+				stringLength := binary.LittleEndian.Uint32(stringLengthBytes)
+
+				// String Value
+				stringValueBytes := make([]byte, stringLength)
+				_, err = io.ReadFull(file, stringValueBytes)
+				log.Printf("Object %d Group %d Property Value: %s\n", i, j, string(stringValueBytes))
+			}
+		}
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
 }
-
