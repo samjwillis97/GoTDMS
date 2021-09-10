@@ -32,16 +32,41 @@ func main() {
 	log.Println("Valid TDMS Segment Starting at: ", startPosition)
 
 	// 4 Byte ToC BitMask NEED TO WORK OUT
-	// kTocMetaData (1L << 1)
-	// kTocRawData (1L << 3)
-	// kTocDAQmxRawData (1L << 7)
-	// kToxInterleavedData (1L << 5)
-	// kTocBigEndian (1L << 6)
-	// kTocNewObjList (1L << 2)
-	tocBitMask := make([]byte, 4)
-	_, err = io.ReadFull(file, tocBitMask)
-	log.Println("NEED TO FINISH TOC MASK")
-	log.Println("ToC BitMask string: ", hex.EncodeToString(tocBitMask))
+	// kTocMetaData (1L << 1)					= 0b0000 0010			= 0x2
+	// kTocRawData (1L << 3)					= 0b0000 1000			= 0x8
+	// kTocDAQmxRawData (1L << 7)			= 0b1000 0000			= 0x80
+	// kToxInterleavedData (1L << 5)  = 0b0010 0000			= 0x20
+	// kTocBigEndian (1L << 6)				= 0b0100 0000			= 0x40
+	// kTocNewObjList (1L << 2)				= 0b0000 0100			= 0x4
+	// Example
+	// Binary (Hexadecimal)		= 0E 00 00 00
+	// ToC Mask								= 0x0000000E = 0b1110 = 0001 0001 0001 0000
+	// Segment Contains: Object List, Meta Data, Raw Data
+	tocBitMaskBytes := make([]byte, 4)
+	_, err = io.ReadFull(file, tocBitMaskBytes)
+	tocBitMask := binary.LittleEndian.Uint32(tocBitMaskBytes)	
+	// log.Println("NEED TO FINISH TOC MASK")
+	// log.Println("ToC BitMask Bytes: ", tocBitMaskBytes)
+	log.Println("ToC BitMask: ", tocBitMask)
+
+	if ((0b10 & tocBitMask) == 0b10) {
+		log.Println("Segment Contains Meta Data")	
+	}
+	if ((0b1000 & tocBitMask) == 0b1000) {
+		log.Println("Segment Contains Raw Data")	
+	}
+	if ((0b10000000 & tocBitMask) == 0b10000000) {
+		log.Println("Segment Contains DAQmx Raw Data")	
+	}
+	if ((0b100000 & tocBitMask) == 0b100000) {
+		log.Println("Segment Contains Interleaved Data")	
+	}
+	if ((0b1000000 & tocBitMask) == 0b1000000) {
+		log.Println("Segment Contains Big Endian Data")	
+	}
+	if ((0b100 & tocBitMask) == 0b100) {
+		log.Println("Segment Contains New Object List")	
+	}  
 
 	// 4 Byte Version Number
 	// 4713 = v2.0
@@ -49,8 +74,8 @@ func main() {
 	versionNumberBytes := make([]byte, 4)
 	_, err = io.ReadFull(file, versionNumberBytes)
 	versionNumber := binary.LittleEndian.Uint32(versionNumberBytes)
-	log.Println("Version Number Bytes:", versionNumberBytes)
-	log.Println("Version Number String", hex.EncodeToString(versionNumberBytes))
+	// log.Println("Version Number Bytes:", versionNumberBytes)
+	// log.Println("Version Number String", hex.EncodeToString(versionNumberBytes))
 	log.Println("Version Number: ", versionNumber)
 
 	// 8 Bytes - Length of Remaining Segment
