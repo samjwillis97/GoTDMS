@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"math"
 )
 
 type leadInData struct {
@@ -14,6 +15,32 @@ type leadInData struct {
 	nextSegOffset uint64
 	rawDataOffset uint64
 }
+
+type tdsDataType uint64
+
+const (
+	Void		tdsDataType = 0
+	Int8		tdsDataType = 1
+	Int16		tdsDataType = 2
+	Int32		tdsDataType = 3
+	Int64		tdsDataType = 4
+	Uint8		tdsDataType = 5
+	Uint16	tdsDataType = 6
+	Uint32	tdsDataType = 7
+	Uint64	tdsDataType = 8
+	SGL			tdsDataType = 9
+	DBL			tdsDataType = 10
+	EXT			tdsDataType = 11
+	SGLwUnit	tdsDataType = 0x19
+	DBLwUnit	tdsDataType = 0x1A
+	EXTwUnit	tdsDataType = 0x1B
+	String		tdsDataType = 0x20
+	Boolean		tdsDataType = 0x21
+	Timestamp	tdsDataType = 0x44
+	ComplexSGL	tdsDataType = 0x08000C
+	ComplexDBL	tdsDataType = 0x10000D
+	DAQmx				tdsDataType = 0xFFFFFF
+)
 
 func main() {
 	initLogging()
@@ -29,12 +56,15 @@ func main() {
 	// initLeadInData := readTDMSLeadIn(file, 0, 0)
 	readTDMSLeadIn(file, 0, 0)
 	readTDMSMetaData(file, 0, 1)
+	
+	finalPos, err := file.Seek(0, 1)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	file.Close()
+	log.Printf("TDMS Closed at position: %d\n", finalPos)
 }
 
 func initLogging() {
@@ -164,109 +194,154 @@ func readTDMSMetaData(file *os.File, offset int64, whence int) {
 		objPath := stringFromTDMS(file, 0, 1)
 		log.Printf("Object %d Path: %s\n", i, objPath)
 
-		// objects[i] = string(objPathBytes)
-
-		// Read Object Raw Data Index
-		// FF FF FF FF means there is no raw data
-		// 69 12 00 00 DAQmx Format Changing Scaler
-		// 69 13 00 00 DAQmx Digital Line Scaler
-		// Matches Previous Segment Same Object i.e. use previous
-		// Otherwise 
-		rawDataIndexBytes := make([]byte, 4)
-		_, err := io.ReadFull(file, rawDataIndexBytes)
-		log.Printf("Object %d Raw Data Index: % x", i, rawDataIndexBytes)
-
-		noRawDataValue := []byte{255, 255, 255, 255}
-		// IMPLEMENT DAQMX
-
-		rawDataPresent := bytes.Compare(rawDataIndexBytes, noRawDataValue)
-
-		if rawDataPresent == 0 {
-			log.Printf("Object %d No Raw Data Present\n", i)
-			// log.Fatal("Not Implemented past this point")
-		} else {
-			log.Printf("Object %d Raw Data Present\n", i)
-
-			// Get Index Information
-
-			// Non-DAQmx TDMS
-			// Not sure where this variable is????
-			// rawDataIndexLength := uint32FromTDMS(file, 0, 1)
-			// log.Printf("Object %d Raw Data Index Length: % x\n", i, rawDataIndexLength)
-
-			// tdsDataTypes from npTDMS
-			// 0 = Void Pass
-			// 1 = Int8, Size = 1
-			// 2 = Int16, Size = 2
-			// 3 = Int32, Size = 4
-			// 4 = Int64, Size = 8
-			// 5 = Uint8, Size = 1
-			// 6 = Uint16, Size = 2
-			// 7 = Uint32, Size = 4
-			// 8 = Uint64, Size = 8
-			// 9 = SGL, Size = 4
-			// 10 = DBL, Size = 8
-			// 11 = EXT Pass
-			// 0x19 = SGL w Unit, Size = 4
-			// 0x1A = DBL w Unit, Size = 8
-			// 0x1B = EXT w Unit Pass
-			// 0x20 = String
-			// 0x21 = Boolean, Size = 1
-			// 0x44 = Time, Size = 16
-			// 0x08000C = Complex SGL
-			// 0x10000d = Complex DBL
-			// 0xFFFFFF = DAQmx Raw Data
-
-			// Enum to Handle
-			dataType := uint32FromTDMS(file, 0, 1)
-			log.Printf("Object %d Data Type: %d\n", i, dataType)
-
-			// must equal 1 for v2.0
-			arrayDimension := uint32FromTDMS(file, 0, 1)
-			if arrayDimension != 1 {
-				log.Fatal("Not Valid TDMS 2.0, Data Dimension is not 1")
-			}
-
-			numValues := uint64FromTDMS(file, 0, 1)
-			log.Printf("Object %d Number of Values: %d\n", i, numValues)
-
-			// If String Read Value Size
-
-			log.Fatal("Not Implemented past this point")
-		}
+		// Read Object
+		readTDMSObjectInfo(file, 0, 1)
 
 		// Number of Object Properties
-		numGroupProperties := uint32FromTDMS(file, 0, 1)
-		log.Printf("Number of Object %d Group Properties: %d\n", i, numGroupProperties)
+		numProperties := uint32FromTDMS(file, 0, 1)
+		log.Printf("Number of Object %d Properties: %d\n", i, numProperties)
 
-		for j := uint32(0); j < numGroupProperties; j++ {
-			log.Printf("Reading Object %d Properties \n", i)
+		for j := uint32(0); j < numProperties; j++ {
+			log.Printf("Reading Object %d Property %d\n", i, j)
+			readTDMSProperty(file, 0, 1)
 
-			// Property Name
-			propertyName := stringFromTDMS(file, 0, 1)
-			log.Printf("Object %d Group %d Property Name: %s\n", i, j, propertyName)
-
-			// Property Data Type
-			// tdsTypeString			0x20
-			// tdsTypeBoolean			0x21
-			// tdsTypeTimeStamp		0x44
-			// Printed in Hex
-			propertyDataType := uint32FromTDMS(file, 0, 1)
-			switch propertyDataType {
-			case 0x20:
-				log.Printf("Object %d Group %d Property Data Type: String", i, j)
-
-				// String Value
-				stringValue := stringFromTDMS(file, 0, 1)
-				log.Printf("Object %d Group %d Property Value: %s\n", i, j, stringValue)
-			}
-		}
-		if err != nil {
-			log.Fatal("Error Return :", err)
 		}
 	}
 }
 
+
+func readTDMSObjectInfo(file *os.File, offset int64, whence int) {
+	// Check first 4 Bytes
+	// if FF FF FF FF No Raw Data -> Read Properties
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
+	}
+
+	// Read Raw Data Index/Length of Index Information
+	// FF FF FF FF means there is no raw data
+	// 69 12 00 00 DAQmx Format Changing Scaler
+	// 69 13 00 00 DAQmx Digital Line Scaler
+	// Matches Previous Segment Same Object i.e. use previous
+	// Otherwise 
+	rawDataIndexBytes := make([]byte, 4)
+	_, err = io.ReadFull(file, rawDataIndexBytes)
+	indexLength := binary.LittleEndian.Uint32(rawDataIndexBytes)
+	log.Printf("Object Raw Data Index: % x", rawDataIndexBytes)
+
+	noRawDataValue := []byte{255, 255, 255, 255}
+	// IMPLEMENT DAQMX
+
+	rawDataPresent := bytes.Compare(rawDataIndexBytes, noRawDataValue)
+
+	if rawDataPresent == 0 {
+		log.Printf("Object No Raw Data Present\n")
+		// to -> Read Properties
+		return
+	} else {
+		// Raw Data is Present
+		log.Printf("Object Index Length: %d\n", indexLength)
+
+		// Get Index Information
+
+		// tdsDataTypes from npTDMS
+		// 0 = Void Pass
+		// 1 = Int8, Size = 1
+		// 2 = Int16, Size = 2
+		// 3 = Int32, Size = 4
+		// 4 = Int64, Size = 8
+		// 5 = Uint8, Size = 1
+		// 6 = Uint16, Size = 2
+		// 7 = Uint32, Size = 4
+		// 8 = Uint64, Size = 8
+		// 9 = SGL, Size = 4
+		// 10 = DBL, Size = 8
+		// 11 = EXT Pass
+		// 0x19 = SGL w Unit, Size = 4
+		// 0x1A = DBL w Unit, Size = 8
+		// 0x1B = EXT w Unit Pass
+		// 0x20 = String
+		// 0x21 = Boolean, Size = 1
+		// 0x44 = Time, Size = 16
+		// 0x08000C = Complex SGL
+		// 0x10000d = Complex DBL
+		// 0xFFFFFF = DAQmx Raw Data
+
+		dataType := uint32FromTDMS(file, 0, 1)
+		log.Printf("Object Data Type: %d\n", dataType)
+
+		// must equal 1 for v2.0
+		arrayDimension := uint32FromTDMS(file, 0, 1)
+		if arrayDimension != 1 {
+			log.Fatal("Not Valid TDMS 2.0, Data Dimension is not 1")
+		}
+
+		numValues := uint64FromTDMS(file, 0, 1)
+		log.Printf("Object Number of Values: %d\n", numValues)
+
+		// TODO
+		// If String Read Value Size
+
+		// to -> Read Properties
+		return
+	}
+}
+
+func readTDMSProperty(file *os.File, offset int64, whence int) {
+		_, err := file.Seek(offset, whence)
+		if err != nil {
+			log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
+		}
+
+		// Property Name
+		propertyName := stringFromTDMS(file, 0, 1)
+		log.Printf("Property Name: %s\n", propertyName)
+
+		// Printed in Hex
+		propertyDataType := uint32FromTDMS(file, 0, 1)
+		propertyTdsDataType := tdsDataType(propertyDataType)
+		// TODO
+		// Finish This
+		switch propertyTdsDataType {
+		default:
+			log.Fatal("Property Data Type Unkown")
+		case String:
+			stringValue := stringFromTDMS(file, 0, 1)
+			log.Printf("Property Value: %s\n", stringValue)
+		case Int32:
+			int32Value := int32FromTDMS(file, 0, 1)	
+			log.Printf("Property Value: %d\n", int32Value)
+		case Uint32:
+			uint32Value := uint32FromTDMS(file, 0, 1)	
+			log.Printf("Property Value: %d\n", uint32Value)
+		case Uint64:
+			uint64Value := uint64FromTDMS(file, 0, 1)
+			log.Printf("Property Value: %d\n", uint64Value)
+		case DBL:
+			DBLValue := DBLFromTDMS(file, 0, 1)
+			log.Printf("Property Value: %.6f\n", DBLValue)
+		case Timestamp:
+			log.Printf("Timestamp Property not implemented\n")
+			// To Skip Required Size
+			_, err = file.Seek(16, 1)
+		}
+
+}
+
+// TODO
+// Change these to read one or more
+// Probably more efficient
+
+// Reads a uint32 from a TDMS File
+// Starts at Byte Defined by Offset
+// When is the reference point for the offset
+// 0 = Beginning of File
+// 1 = Current Position
+// 2 = End of File
+func int32FromTDMS(file *os.File, offset int64, whence int) (int32) {
+	value := uint32FromTDMS(file, offset, whence)
+	return int32(value)
+}
 // Reads a string from a TDMS File
 // Starts at Byte Defined by Offset
 // When is the reference point for the offset
@@ -340,4 +415,9 @@ func uint64FromTDMS(file *os.File, offset int64, whence int) (uint64) {
 	intNumber := binary.LittleEndian.Uint64(intBytes)
 
 	return intNumber
+}
+
+func DBLFromTDMS(file *os.File, offset int64, whence int) (float64) {
+	value := uint64FromTDMS(file, offset, whence)
+	return math.Float64frombits(value)
 }
