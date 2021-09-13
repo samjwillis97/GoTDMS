@@ -54,17 +54,14 @@ const (
 func main() {
 	initLogging()
 
-	file, err := os.OpenFile("demo.tdms", os.O_RDONLY, 0666)
+	file, err := os.OpenFile("testFiles/demo.tdms", os.O_RDONLY, 0666)
 	if err != nil {
 		log.Fatal("Error return from os.OpenFile: ", err)
 	}
 
 	// Reading a TDMS File
 	// https://www.ni.com/en-au/support/documentation/supplemental/07/tdms-file-format-internal-structure.html
-
-	// initLeadInData := readTDMSLeadIn(file, 0, 0)
-	readTDMSLeadIn(file, 0, 0)
-	readTDMSMetaData(file, 0, 1)
+	readTDMSSegment(file, 0, 1)
 
 	finalPos, err := file.Seek(0, 1)
 
@@ -92,12 +89,26 @@ func initLogging() {
 	log.Println("TDMS Reader Init")
 }
 
+// Reads a TDMS Segment
+// Includes:
+// - Lead In
+// - Meta Data
+// Data is written in Segments, every time data is appended to a TDMS, a new segment is created
+// A segment consists of Lead In, Meta Data, and Raw Data.
+// There are exceptions to the rules
+// hence Different Groups when written after each other will be in different seg
+func readTDMSSegment(file *os.File, offset int64, whence int) {
+	readTDMSLeadIn(file, offset, whence)
+	readTDMSMetaData(file, 0, 1)
+}
+
 // Reads the TDMS Lead-In (28 Bytes)
-// Start Tag = 4 Bytes
-// ToC BitMask = 4 Bytes
-// Version Number = 4 Bytes
-// Segment Length = 8 Bytes
-// Metadata Length = 8 Bytes
+// Includes:
+// - Start Tag = 4 Bytes
+// - ToC BitMask = 4 Bytes
+// - Version Number = 4 Bytes
+// - Segment Length = 8 Bytes
+// - Metadata Length = 8 Bytes
 // Total 28 Bytes
 // Starts at Byte Defined by Offset
 // When is the reference point for the offset
@@ -189,6 +200,12 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
 }
 
 // Read the TDMS MetaData
+// Includes:
+// - Reading Number of Objects in Segment
+// - Object Paths
+// - Object Info
+// - Object Properties
+//
 // Starts at Byte Defined by Offset
 // When is the reference point for the offset
 // 0 = Beginning of File
@@ -227,6 +244,15 @@ func readTDMSMetaData(file *os.File, offset int64, whence int) {
 	// Read the Data
 }
 
+// Read the Info for a TDMS Object
+// Includes:
+// - Raw Data Index
+// - Raw Data Index Information
+// Starts at Byte Defined by Offset
+// When is the reference point for the offset
+// 0 = Beginning of File
+// 1 = Current Position
+// 2 = End of File
 func readTDMSObjectInfo(file *os.File, offset int64, whence int) rawDataInfo {
 	// Check first 4 Bytes
 	// if FF FF FF FF No Raw Data -> Read Properties
@@ -338,6 +364,9 @@ func readTDMSObjectInfo(file *os.File, offset int64, whence int) rawDataInfo {
 	}
 }
 
+// Read the Properties for a TDMS Object
+// TODO
+// Change this to output a list of properties
 func readTDMSProperty(file *os.File, offset int64, whence int) {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
