@@ -98,8 +98,38 @@ func initLogging() {
 // There are exceptions to the rules
 // hence Different Groups when written after each other will be in different seg
 func readTDMSSegment(file *os.File, offset int64, whence int) {
+	// Read TDMS Lead In
+	// leadIn := readTDMSLeadIn(file, offset, whence)
 	readTDMSLeadIn(file, offset, whence)
-	readTDMSMetaData(file, 0, 1)
+
+	// Read TDMS Meta Data
+	objMap := readTDMSMetaData(file, 0, 1)
+	// log.Println(objMap)
+
+	// Calculations for Raw Data
+
+	// Determining the Raw Data Size of One Chunk
+	// By accumulating the raw data size of all channels
+	chunkSize := int64(0)
+	for _, element := range objMap {
+		chunkSize += int64(element.rawDataSize)
+	}
+
+	// TODO: Calculate Raw Data Size of Total Chunks
+	// Next Segment Offset - Raw Data Offset
+	// IF Next Segment Offset = -1, raw data size of total chunks
+	// 	equals the file size minus the absolute beginning position
+	// 	of the raw data
+
+	// TODO: Calculate the Number of Chunks
+	// Raw Data Size of total Chunks / Raw Data size of One Chunk
+
+	// TODO: Read Raw Data
+	// if (0b100000 & leadIn.ToCMask) == 0b100000 {
+	// Segment Contains Interleaved Data
+	// }
+	// FIXME: Only Temporary
+	// DBLArrayFromTDMS(file, chunkSize/8, 0, 1)
 }
 
 // Reads the TDMS Lead-In (28 Bytes)
@@ -211,8 +241,10 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSMetaData(file *os.File, offset int64, whence int) {
+func readTDMSMetaData(file *os.File, offset int64, whence int) map[string]rawDataInfo {
 	log.Println("READING METADATA")
+
+	objMap := make(map[string]rawDataInfo)
 
 	// First 4 Bytes have number of objects in metadata
 	numObjects := uint32FromTDMS(file, 0, 1)
@@ -227,8 +259,8 @@ func readTDMSMetaData(file *os.File, offset int64, whence int) {
 		log.Printf("Object %d Path: %s\n", i, objPath)
 
 		// Read Object
-		readTDMSObjectInfo(file, 0, 1)
-		// objRawDataInfo := readTDMSObjectInfo(file, 0, 1)
+		// readTDMSObjectInfo(file, 0, 1)
+		objMap[objPath] = readTDMSObjectInfo(file, 0, 1)
 
 		// Number of Object Properties
 		numProperties := uint32FromTDMS(file, 0, 1)
@@ -240,8 +272,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int) {
 
 		}
 	}
-	// TODO
-	// Read the Data
+	return objMap
 }
 
 // Read the Info for a TDMS Object
@@ -485,6 +516,87 @@ func uint32FromTDMS(file *os.File, offset int64, whence int) uint32 {
 	intNumber := binary.LittleEndian.Uint32(intBytes)
 
 	return intNumber
+}
+
+func uint32ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []uint32 {
+	size := int64(4)
+
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in uint32FromTDMS: ", err)
+	}
+
+	intByteArray := make([]byte, number*size)
+	_, err = io.ReadFull(file, intByteArray)
+	if err != nil {
+		log.Fatal("Error return from io.ReadFull in uint32FromTDMS: ", err)
+	}
+
+	var vals []uint32
+
+	for i := int64(0); i < number; i++ {
+		startBit := i * size
+		endBit := startBit + size
+		val := binary.LittleEndian.Uint32(intByteArray[startBit:endBit])
+		vals = append(vals, val)
+		log.Printf("Value %d: %d\n", i, val)
+	}
+
+	return vals
+}
+
+func uint64ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []uint64 {
+	size := int64(8)
+
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in uint64FromTDMS: ", err)
+	}
+
+	intByteArray := make([]byte, number*size)
+	_, err = io.ReadFull(file, intByteArray)
+	if err != nil {
+		log.Fatal("Error return from io.ReadFull in uint64FromTDMS: ", err)
+	}
+
+	var vals []uint64
+
+	for i := int64(0); i < number; i++ {
+		startBit := i * size
+		endBit := startBit + size
+		val := binary.LittleEndian.Uint64(intByteArray[startBit:endBit])
+		vals = append(vals, val)
+		log.Printf("Value %d: %d\n", i, val)
+	}
+
+	return vals
+}
+
+func DBLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []float64 {
+	size := int64(8)
+
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in DBLArrayFromTDMS: ", err)
+	}
+
+	intByteArray := make([]byte, number*size)
+	_, err = io.ReadFull(file, intByteArray)
+	if err != nil {
+		log.Fatal("Error return from io.ReadFull in DBLArrayFromTDMS: ", err)
+	}
+
+	var vals []float64
+
+	for i := int64(0); i < number; i++ {
+		startBit := i * size
+		endBit := startBit + size
+		val := math.Float64frombits(binary.LittleEndian.Uint64(intByteArray[startBit:endBit]))
+		vals = append(vals, val)
+		log.Printf("Value %d: %.2f\n", i, val)
+	}
+
+	return vals
 }
 
 // Reads a uint64 from a TDMS File
