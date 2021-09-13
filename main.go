@@ -54,14 +54,19 @@ const (
 func main() {
 	initLogging()
 
-	file, err := os.OpenFile("testFiles/demo.tdms", os.O_RDONLY, 0666)
+	file, err := os.OpenFile("testFiles/test.tdms", os.O_RDONLY, 0666)
 	if err != nil {
 		log.Fatal("Error return from os.OpenFile: ", err)
 	}
 
 	// Reading a TDMS File
 	// https://www.ni.com/en-au/support/documentation/supplemental/07/tdms-file-format-internal-structure.html
+	// TODO: Fix Timestamp Reading
+	// TODO: Proper Reading and More Error Checks with File Lengths
+	// TODO: Workout and Implement Interfaces
 	readTDMSSegment(file, 0, 1)
+	readTDMSSegment(file, 0, 1)
+	// readTDMSSegment(file, 0, 1)
 
 	finalPos, err := file.Seek(0, 1)
 
@@ -124,12 +129,29 @@ func readTDMSSegment(file *os.File, offset int64, whence int) {
 	// TODO: Calculate the Number of Chunks
 	// Raw Data Size of total Chunks / Raw Data size of One Chunk
 
-	// TODO: Read Raw Data
+	// TODO: Finish Reading Raw Data
 	// if (0b100000 & leadIn.ToCMask) == 0b100000 {
 	// Segment Contains Interleaved Data
 	// }
-	// FIXME: Only Temporary
-	// DBLArrayFromTDMS(file, chunkSize/8, 0, 1)
+
+	// Read Data Ch by Ch
+	for key, element := range objMap {
+		switch element.dataType {
+		default:
+			_, err := file.Seek(int64(element.rawDataSize), 1)
+			if err != nil {
+				log.Fatal("Error return by file.Seek in readTDMSSegment: ", err)
+			}
+		case DBL:
+			data := DBLArrayFromTDMS(file, int64(element.numValues), 0, 1)
+			dataMin, dataMax := minMaxFloat64Slice(data)
+			log.Printf("Read %s Values\n", key)
+			log.Printf("Number of Values: %d\n", len(data))
+			log.Printf("Max Value: %.6f\n", dataMax)
+			log.Printf("Min Value: %.6f\n", dataMin)
+			log.Printf("Average Value: %.6f\n", averageFloat64Slice(data))
+		}
+	}
 }
 
 // Reads the TDMS Lead-In (28 Bytes)
@@ -436,7 +458,6 @@ func readTDMSProperty(file *os.File, offset int64, whence int) {
 		timestampValue := timeFromTDMS(file, 0, 1)
 		log.Printf("Property Value: %s\n", timestampValue.String())
 	}
-
 }
 
 // TODO
@@ -493,7 +514,6 @@ func stringFromTDMS(file *os.File, offset int64, whence int) string {
 	}
 
 	return string(stringBytes)
-
 }
 
 // Reads a uint32 from a TDMS File
@@ -539,7 +559,7 @@ func uint32ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) 
 		endBit := startBit + size
 		val := binary.LittleEndian.Uint32(intByteArray[startBit:endBit])
 		vals = append(vals, val)
-		log.Printf("Value %d: %d\n", i, val)
+		// log.Printf("Value %d: %d\n", i, val)
 	}
 
 	return vals
@@ -566,7 +586,7 @@ func uint64ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) 
 		endBit := startBit + size
 		val := binary.LittleEndian.Uint64(intByteArray[startBit:endBit])
 		vals = append(vals, val)
-		log.Printf("Value %d: %d\n", i, val)
+		// log.Printf("Value %d: %d\n", i, val)
 	}
 
 	return vals
@@ -593,7 +613,7 @@ func DBLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []f
 		endBit := startBit + size
 		val := math.Float64frombits(binary.LittleEndian.Uint64(intByteArray[startBit:endBit]))
 		vals = append(vals, val)
-		log.Printf("Value %d: %.2f\n", i, val)
+		// log.Printf("Value %d: %.2f\n", i, val)
 	}
 
 	return vals
@@ -638,8 +658,8 @@ func DBLFromTDMS(file *os.File, offset int64, whence int) float64 {
 // 0 = Beginning of File
 // 1 = Current Position
 func timeFromTDMS(file *os.File, offset int64, whence int) time.Time {
-	LVseconds := int64FromTDMS(file, offset, whence)
-	posFractions := uint64FromTDMS(file, 0, 1)
+	posFractions := uint64FromTDMS(file, offset, whence)
+	LVseconds := int64FromTDMS(file, 0, 1)
 	nanoSeconds := float64(posFractions) * math.Pow(2, -64) * 1e9
 	secondsToUnix := 2.083e9
 	timeValue := time.Unix(0, 0)
@@ -647,4 +667,29 @@ func timeFromTDMS(file *os.File, offset int64, whence int) time.Time {
 		timeValue = time.Unix(LVseconds-int64(secondsToUnix), int64(nanoSeconds))
 	}
 	return timeValue
+}
+
+func minMaxFloat64Slice(y []float64) (min float64, max float64) {
+	min = y[0]
+	max = y[0]
+
+	for _, v := range y {
+		if v > max {
+			max = v
+		} else if v < min {
+			min = v
+		}
+	}
+
+	return min, max
+}
+
+func averageFloat64Slice(y []float64) (avg float64) {
+	avg = y[0]
+
+	for _, v := range y {
+		avg += v
+	}
+
+	return avg / float64(len(y))
 }
