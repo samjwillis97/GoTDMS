@@ -5,8 +5,9 @@ import (
 	"encoding/binary"
 	"io"
 	"log"
-	"os"
 	"math"
+	"os"
+	"time"
 )
 
 type leadInData struct {
@@ -16,36 +17,44 @@ type leadInData struct {
 	rawDataOffset uint64
 }
 
+type rawDataInfo struct {
+	rawDataIndex   []byte
+	dataType       tdsDataType
+	arrayDimension uint32
+	numValues      uint64
+	rawDataSize    uint64
+}
+
 type tdsDataType uint64
 
 const (
-	Void		tdsDataType = 0
-	Int8		tdsDataType = 1
-	Int16		tdsDataType = 2
-	Int32		tdsDataType = 3
-	Int64		tdsDataType = 4
-	Uint8		tdsDataType = 5
-	Uint16	tdsDataType = 6
-	Uint32	tdsDataType = 7
-	Uint64	tdsDataType = 8
-	SGL			tdsDataType = 9
-	DBL			tdsDataType = 10
-	EXT			tdsDataType = 11
-	SGLwUnit	tdsDataType = 0x19
-	DBLwUnit	tdsDataType = 0x1A
-	EXTwUnit	tdsDataType = 0x1B
-	String		tdsDataType = 0x20
-	Boolean		tdsDataType = 0x21
-	Timestamp	tdsDataType = 0x44
-	ComplexSGL	tdsDataType = 0x08000C
-	ComplexDBL	tdsDataType = 0x10000D
-	DAQmx				tdsDataType = 0xFFFFFF
+	Void       tdsDataType = 0
+	Int8       tdsDataType = 1
+	Int16      tdsDataType = 2
+	Int32      tdsDataType = 3
+	Int64      tdsDataType = 4
+	Uint8      tdsDataType = 5
+	Uint16     tdsDataType = 6
+	Uint32     tdsDataType = 7
+	Uint64     tdsDataType = 8
+	SGL        tdsDataType = 9
+	DBL        tdsDataType = 10
+	EXT        tdsDataType = 11
+	SGLwUnit   tdsDataType = 0x19
+	DBLwUnit   tdsDataType = 0x1A
+	EXTwUnit   tdsDataType = 0x1B
+	String     tdsDataType = 0x20
+	Boolean    tdsDataType = 0x21
+	Timestamp  tdsDataType = 0x44
+	ComplexSGL tdsDataType = 0x08000C
+	ComplexDBL tdsDataType = 0x10000D
+	DAQmx      tdsDataType = 0xFFFFFF
 )
 
 func main() {
 	initLogging()
 
-	file, err := os.OpenFile("test.tdms", os.O_RDONLY, 0666)
+	file, err := os.OpenFile("demo.tdms", os.O_RDONLY, 0666)
 	if err != nil {
 		log.Fatal("Error return from os.OpenFile: ", err)
 	}
@@ -56,7 +65,7 @@ func main() {
 	// initLeadInData := readTDMSLeadIn(file, 0, 0)
 	readTDMSLeadIn(file, 0, 0)
 	readTDMSMetaData(file, 0, 1)
-	
+
 	finalPos, err := file.Seek(0, 1)
 
 	if err != nil {
@@ -83,7 +92,13 @@ func initLogging() {
 	log.Println("TDMS Reader Init")
 }
 
-// Reads the TDMS Lead-In
+// Reads the TDMS Lead-In (28 Bytes)
+// Start Tag = 4 Bytes
+// ToC BitMask = 4 Bytes
+// Version Number = 4 Bytes
+// Segment Length = 8 Bytes
+// Metadata Length = 8 Bytes
+// Total 28 Bytes
 // Starts at Byte Defined by Offset
 // When is the reference point for the offset
 // 0 = Beginning of File
@@ -196,6 +211,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int) {
 
 		// Read Object
 		readTDMSObjectInfo(file, 0, 1)
+		// objRawDataInfo := readTDMSObjectInfo(file, 0, 1)
 
 		// Number of Object Properties
 		numProperties := uint32FromTDMS(file, 0, 1)
@@ -207,10 +223,11 @@ func readTDMSMetaData(file *os.File, offset int64, whence int) {
 
 		}
 	}
+	// TODO
+	// Read the Data
 }
 
-
-func readTDMSObjectInfo(file *os.File, offset int64, whence int) {
+func readTDMSObjectInfo(file *os.File, offset int64, whence int) rawDataInfo {
 	// Check first 4 Bytes
 	// if FF FF FF FF No Raw Data -> Read Properties
 	_, err := file.Seek(offset, whence)
@@ -223,9 +240,12 @@ func readTDMSObjectInfo(file *os.File, offset int64, whence int) {
 	// 69 12 00 00 DAQmx Format Changing Scaler
 	// 69 13 00 00 DAQmx Digital Line Scaler
 	// Matches Previous Segment Same Object i.e. use previous
-	// Otherwise 
+	// Otherwise
 	rawDataIndexBytes := make([]byte, 4)
 	_, err = io.ReadFull(file, rawDataIndexBytes)
+	if err != nil {
+		log.Fatal("Error return from io.ReadFull in readTDMSObject: ", err)
+	}
 	indexLength := binary.LittleEndian.Uint32(rawDataIndexBytes)
 	log.Printf("Object Raw Data Index: % x", rawDataIndexBytes)
 
@@ -237,7 +257,13 @@ func readTDMSObjectInfo(file *os.File, offset int64, whence int) {
 	if rawDataPresent == 0 {
 		log.Printf("Object No Raw Data Present\n")
 		// to -> Read Properties
-		return
+		return rawDataInfo{
+			rawDataIndexBytes,
+			0,
+			0,
+			0,
+			0,
+		}
 	} else {
 		// Raw Data is Present
 		log.Printf("Object Index Length: %d\n", indexLength)
@@ -270,6 +296,21 @@ func readTDMSObjectInfo(file *os.File, offset int64, whence int) {
 		dataType := uint32FromTDMS(file, 0, 1)
 		log.Printf("Object Data Type: %d\n", dataType)
 
+		dataSize := 0
+
+		switch tdsDataType(dataType) {
+		case Int8, Uint8, Boolean:
+			dataSize = 1
+		case Int16, Uint16:
+			dataSize = 2
+		case Int32, Uint32, SGL, SGLwUnit:
+			dataSize = 4
+		case Int64, Uint64, DBL, DBLwUnit:
+			dataSize = 8
+		case Timestamp:
+			dataSize = 16
+		}
+
 		// must equal 1 for v2.0
 		arrayDimension := uint32FromTDMS(file, 0, 1)
 		if arrayDimension != 1 {
@@ -283,48 +324,58 @@ func readTDMSObjectInfo(file *os.File, offset int64, whence int) {
 		// If String Read Value Size
 
 		// to -> Read Properties
-		return
+
+		channelRawDataSize := uint64(dataSize) * uint64(arrayDimension) * numValues
+		log.Printf("Channel Raw Data Size: %d\n", channelRawDataSize)
+
+		return rawDataInfo{
+			rawDataIndexBytes,
+			tdsDataType(dataType),
+			arrayDimension,
+			numValues,
+			channelRawDataSize,
+		}
 	}
 }
 
 func readTDMSProperty(file *os.File, offset int64, whence int) {
-		_, err := file.Seek(offset, whence)
-		if err != nil {
-			log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
-		}
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
+	}
 
-		// Property Name
-		propertyName := stringFromTDMS(file, 0, 1)
-		log.Printf("Property Name: %s\n", propertyName)
+	// Property Name
+	propertyName := stringFromTDMS(file, 0, 1)
+	log.Printf("Property Name: %s\n", propertyName)
 
-		// Printed in Hex
-		propertyDataType := uint32FromTDMS(file, 0, 1)
-		propertyTdsDataType := tdsDataType(propertyDataType)
-		// TODO
-		// Finish This
-		switch propertyTdsDataType {
-		default:
-			log.Fatal("Property Data Type Unkown")
-		case String:
-			stringValue := stringFromTDMS(file, 0, 1)
-			log.Printf("Property Value: %s\n", stringValue)
-		case Int32:
-			int32Value := int32FromTDMS(file, 0, 1)	
-			log.Printf("Property Value: %d\n", int32Value)
-		case Uint32:
-			uint32Value := uint32FromTDMS(file, 0, 1)	
-			log.Printf("Property Value: %d\n", uint32Value)
-		case Uint64:
-			uint64Value := uint64FromTDMS(file, 0, 1)
-			log.Printf("Property Value: %d\n", uint64Value)
-		case DBL:
-			DBLValue := DBLFromTDMS(file, 0, 1)
-			log.Printf("Property Value: %.6f\n", DBLValue)
-		case Timestamp:
-			log.Printf("Timestamp Property not implemented\n")
-			// To Skip Required Size
-			_, err = file.Seek(16, 1)
-		}
+	// Printed in Hex
+	propertyDataType := uint32FromTDMS(file, 0, 1)
+	propertyTdsDataType := tdsDataType(propertyDataType)
+	// TODO
+	// Finish This
+	switch propertyTdsDataType {
+	default:
+		log.Fatal("Property Data Type Unkown")
+	case String:
+		stringValue := stringFromTDMS(file, 0, 1)
+		log.Printf("Property Value: %s\n", stringValue)
+	case Int32:
+		int32Value := int32FromTDMS(file, 0, 1)
+		log.Printf("Property Value: %d\n", int32Value)
+	case Uint32:
+		uint32Value := uint32FromTDMS(file, 0, 1)
+		log.Printf("Property Value: %d\n", uint32Value)
+	case Uint64:
+		uint64Value := uint64FromTDMS(file, 0, 1)
+		log.Printf("Property Value: %d\n", uint64Value)
+	case DBL:
+		DBLValue := DBLFromTDMS(file, 0, 1)
+		log.Printf("Property Value: %.6f\n", DBLValue)
+	case Timestamp:
+		log.Printf("Timestamp Property In Testing\n")
+		timestampValue := timeFromTDMS(file, 0, 1)
+		log.Printf("Property Value: %s\n", timestampValue.String())
+	}
 
 }
 
@@ -332,23 +383,35 @@ func readTDMSProperty(file *os.File, offset int64, whence int) {
 // Change these to read one or more
 // Probably more efficient
 
-// Reads a uint32 from a TDMS File
+// Reads an int32 from a TDMS File
 // Starts at Byte Defined by Offset
 // When is the reference point for the offset
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func int32FromTDMS(file *os.File, offset int64, whence int) (int32) {
+func int32FromTDMS(file *os.File, offset int64, whence int) int32 {
 	value := uint32FromTDMS(file, offset, whence)
 	return int32(value)
 }
+
+// Reads an int64 from a TDMS File
+// Starts at Byte Defined by Offset
+// When is the reference point for the offset
+// 0 = Beginning of File
+// 1 = Current Position
+// 2 = End of File
+func int64FromTDMS(file *os.File, offset int64, whence int) int64 {
+	value := uint64FromTDMS(file, offset, whence)
+	return int64(value)
+}
+
 // Reads a string from a TDMS File
 // Starts at Byte Defined by Offset
 // When is the reference point for the offset
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func stringFromTDMS(file *os.File, offset int64, whence int) (string) {
+func stringFromTDMS(file *os.File, offset int64, whence int) string {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in stringFromTDMS: ", err)
@@ -379,7 +442,7 @@ func stringFromTDMS(file *os.File, offset int64, whence int) (string) {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func uint32FromTDMS(file *os.File, offset int64, whence int) (uint32) {
+func uint32FromTDMS(file *os.File, offset int64, whence int) uint32 {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in uint32FromTDMS: ", err)
@@ -401,7 +464,7 @@ func uint32FromTDMS(file *os.File, offset int64, whence int) (uint32) {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func uint64FromTDMS(file *os.File, offset int64, whence int) (uint64) {
+func uint64FromTDMS(file *os.File, offset int64, whence int) uint64 {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in uint64FromTDMS: ", err)
@@ -417,7 +480,30 @@ func uint64FromTDMS(file *os.File, offset int64, whence int) (uint64) {
 	return intNumber
 }
 
-func DBLFromTDMS(file *os.File, offset int64, whence int) (float64) {
+// Reads a DBL from a TDMS File
+// Starts at Byte Defined by Offset
+// When is the reference point for the offset
+// 0 = Beginning of File
+// 1 = Current Position
+// 2 = End of File
+func DBLFromTDMS(file *os.File, offset int64, whence int) float64 {
 	value := uint64FromTDMS(file, offset, whence)
 	return math.Float64frombits(value)
+}
+
+// Reads a Timestamp from a TDMS File
+// Starts at Byte Defined by Offset
+// When is the reference point for the offset
+// 0 = Beginning of File
+// 1 = Current Position
+func timeFromTDMS(file *os.File, offset int64, whence int) time.Time {
+	LVseconds := int64FromTDMS(file, offset, whence)
+	posFractions := uint64FromTDMS(file, 0, 1)
+	nanoSeconds := float64(posFractions) * math.Pow(2, -64) * 1e9
+	secondsToUnix := 2.083e9
+	timeValue := time.Unix(0, 0)
+	if LVseconds != 0 && nanoSeconds != 0 {
+		timeValue = time.Unix(LVseconds-int64(secondsToUnix), int64(nanoSeconds))
+	}
+	return timeValue
 }
