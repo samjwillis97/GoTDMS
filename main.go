@@ -51,6 +51,21 @@ const (
 	DAQmx      tdsDataType = 0xFFFFFF
 )
 
+	// kTocMetaData (1L << 1)					= 0b0000 0010			= 0x2
+	// kTocRawData (1L << 3)					= 0b0000 1000			= 0x8
+	// kTocDAQmxRawData (1L << 7)			= 0b1000 0000			= 0x80
+	// kToxInterleavedData (1L << 5)  = 0b0010 0000			= 0x20
+	// kTocBigEndian (1L << 6)				= 0b0100 0000			= 0x40
+	// kTocNewObjList (1L << 2)				= 0b0000 0100			= 0x4
+const (
+	kTocMetaData					uint32 = 0x2
+	kTocRawData						uint32 = 0x8
+	kTocDAQmxRawData			uint32 = 0x80
+	kTocInterleavedData		uint32 = 0x20
+	kTocBigEndian					uint32 = 0x40
+	kTocNewObjList				uint32 = 0x4
+)
+
 func main() {
 	initLogging()
 
@@ -66,7 +81,6 @@ func main() {
 	// TODO: Workout and Implement Interfaces
 	readTDMSSegment(file, 0, 1)
 	readTDMSSegment(file, 0, 1)
-	// readTDMSSegment(file, 0, 1)
 
 	finalPos, err := file.Seek(0, 1)
 
@@ -94,6 +108,27 @@ func initLogging() {
 	log.Println("TDMS Reader Init")
 }
 
+func displayTDMSGroupChannels(file *os.File, offset int64, whence int) {
+	// Keep Log of Segments
+	// Start at Segment 0
+	// Seek to Begining of File
+	// Until EOF
+	//	read segment meta data:
+	//		read lead in to vars	
+	//		read segment to vars
+	//		read properties to vars
+	//			take in file, previous segment data, previous segment?, whether hte next segment offset was set
+	//			check ToCMask
+	//				reuse/endianess/objlist
+	//	update object metadata w segment?
+	//  update object properties w properties?
+	//  append segment
+	//  previous segment = segment
+	//  segment pos = segment.next_segment_pos
+	//  seek file to next segment pos
+	//		
+}
+
 // Reads a TDMS Segment
 // Includes:
 // - Lead In
@@ -105,10 +140,10 @@ func initLogging() {
 func readTDMSSegment(file *os.File, offset int64, whence int) {
 	// Read TDMS Lead In
 	// leadIn := readTDMSLeadIn(file, offset, whence)
-	readTDMSLeadIn(file, offset, whence)
+	leadIn := readTDMSLeadIn(file, offset, whence)
 
 	// Read TDMS Meta Data
-	objMap := readTDMSMetaData(file, 0, 1)
+	objMap := readTDMSMetaData(file, 0, 1, leadIn)
 	// log.Println(objMap)
 
 	// Calculations for Raw Data
@@ -187,12 +222,6 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
 	log.Println("Valid TDMS Segment Starting at: ", segmentStartPos)
 
 	// 4 Byte ToC BitMask
-	// kTocMetaData (1L << 1)					= 0b0000 0010			= 0x2
-	// kTocRawData (1L << 3)					= 0b0000 1000			= 0x8
-	// kTocDAQmxRawData (1L << 7)			= 0b1000 0000			= 0x80
-	// kToxInterleavedData (1L << 5)  = 0b0010 0000			= 0x20
-	// kTocBigEndian (1L << 6)				= 0b0100 0000			= 0x40
-	// kTocNewObjList (1L << 2)				= 0b0000 0100			= 0x4
 	// Example
 	// Binary (Hexadecimal)		= 0E 00 00 00
 	// ToC Mask								= 0x0000000E = 0b1110 = 0001 0001 0001 0000
@@ -204,7 +233,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
 	}
 	tocBitMask := binary.LittleEndian.Uint32(tocBitMaskBytes)
 	log.Println("ToC BitMask: ", tocBitMask)
-	if (0b10 & tocBitMask) == 0b10 {
+	if (kTocMetaData & tocBitMask) == kTocMetaData {
 		log.Println("Segment Contains Meta Data")
 	}
 	if (0b1000 & tocBitMask) == 0b1000 {
@@ -263,9 +292,25 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSMetaData(file *os.File, offset int64, whence int) map[string]rawDataInfo {
+func readTDMSMetaData(file *os.File, offset int64, whence int, leadin leadInData) map[string]rawDataInfo {
+	// True if no MetaData
+	if (kTocMetaData & leadin.ToCMask) != kTocMetaData {
+		log.Println("Reuse Previous Segment Metadata")		
+		// TODO: Return + Implement
+	}
+
+	// TODO: Big Endianness with TocMask
+
+	// TODO: if newObjList or NOT Preiouvs Segment????
+	//			 existing Objects = None
+	//			 orderedObjects = []
+	//			 else copy objects from previous 
+
+	// newObjList := ((kTocNewObjList & leadin.ToCMask) == kTocNewObjList)
+
 	log.Println("READING METADATA")
 
+	// Preallocate Map for Objects
 	objMap := make(map[string]rawDataInfo)
 
 	// First 4 Bytes have number of objects in metadata
@@ -281,7 +326,6 @@ func readTDMSMetaData(file *os.File, offset int64, whence int) map[string]rawDat
 		log.Printf("Object %d Path: %s\n", i, objPath)
 
 		// Read Object
-		// readTDMSObjectInfo(file, 0, 1)
 		objMap[objPath] = readTDMSObjectInfo(file, 0, 1)
 
 		// Number of Object Properties
@@ -348,30 +392,6 @@ func readTDMSObjectInfo(file *os.File, offset int64, whence int) rawDataInfo {
 		log.Printf("Object Index Length: %d\n", indexLength)
 
 		// Get Index Information
-
-		// tdsDataTypes from npTDMS
-		// 0 = Void Pass
-		// 1 = Int8, Size = 1
-		// 2 = Int16, Size = 2
-		// 3 = Int32, Size = 4
-		// 4 = Int64, Size = 8
-		// 5 = Uint8, Size = 1
-		// 6 = Uint16, Size = 2
-		// 7 = Uint32, Size = 4
-		// 8 = Uint64, Size = 8
-		// 9 = SGL, Size = 4
-		// 10 = DBL, Size = 8
-		// 11 = EXT Pass
-		// 0x19 = SGL w Unit, Size = 4
-		// 0x1A = DBL w Unit, Size = 8
-		// 0x1B = EXT w Unit Pass
-		// 0x20 = String
-		// 0x21 = Boolean, Size = 1
-		// 0x44 = Time, Size = 16
-		// 0x08000C = Complex SGL
-		// 0x10000d = Complex DBL
-		// 0xFFFFFF = DAQmx Raw Data
-
 		dataType := uint32FromTDMS(file, 0, 1)
 		log.Printf("Object Data Type: %d\n", dataType)
 

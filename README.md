@@ -4,11 +4,16 @@ GoTDMS Library
 
 ## Primary Functionality
 
-- Open TDMS
-- List Contents in Groups and Channels
-- Read Full Group or Channels
-- List Properties of Group or Channels
-- Close TDMS
+- List Groups
+  - tdms list groups <file>
+- List Channels
+  - tdms list channels <group> <file>
+- List Properties of Group/Channel as Strings
+  - tdms list properties <group> <channel> <file>
+- Get Property of Group/Channel with a cast
+  - tdms read property <group> <channel> <name> <type>
+- Output Group/Channel/s with Offset + Length
+  - tdms read data 
 
 ## How to List Contents
 
