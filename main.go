@@ -26,6 +26,10 @@ type RawDataIndex struct {
 	rawDataSize    uint64
 }
 
+type ChunkCalcs struct {
+
+}
+
 type Segment struct {
 	position                 uint64
 	numChunks                uint64
@@ -92,11 +96,22 @@ func main() {
 
 	// Reading a TDMS File
 	// https://www.ni.com/en-au/support/documentation/supplemental/07/tdms-file-format-internal-structure.html
-	// TODO: Fix Timestamp Reading
-	// TODO: Proper Reading and More Error Checks with File Lengths
+	// TODO: Proper Reading and More Error Checks with File Lengths 
 	// TODO: Workout and Implement Interfaces
-	readTDMSSegment(file, 0, 1)
-	readTDMSSegment(file, 0, 1)
+
+	emptySegment := Segment{
+		0,
+		0,
+		map[string]RawDataIndex{},
+		0,
+		0,
+		0,
+		0,
+		0,
+	}
+
+	firstSegment := readTDMSSegment(file, 0, 1, emptySegment)
+	readTDMSSegment(file, 0, 1, firstSegment)
 
 	finalPos, err := file.Seek(0, 1)
 
@@ -153,14 +168,18 @@ func displayTDMSGroupChannels(file *os.File, offset int64, whence int) {
 // A segment consists of Lead In, Meta Data, and Raw Data.
 // There are exceptions to the rules
 // hence Different Groups when written after each other will be in different seg
-func readTDMSSegment(file *os.File, offset int64, whence int) {
+func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segment) Segment {
+	startPos, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
+	}
+
 	// Read TDMS Lead In
 	// leadIn := readTDMSLeadIn(file, offset, whence)
-	leadIn := readTDMSLeadIn(file, offset, whence)
+	leadIn := readTDMSLeadIn(file, 0, 1)
 
 	// Read TDMS Meta Data
-	objMap := readTDMSMetaData(file, 0, 1, leadIn)
-	// log.Println(objMap)
+	objMap := readTDMSMetaData(file, 0, 1, leadIn, prevSegment)
 
 	// Calculations for Raw Data
 
@@ -202,6 +221,16 @@ func readTDMSSegment(file *os.File, offset int64, whence int) {
 			log.Printf("Min Value: %.6f\n", dataMin)
 			log.Printf("Average Value: %.6f\n", averageFloat64Slice(data))
 		}
+	}
+	return Segment{
+		uint64(startPos),
+		0, //TODO:
+		objMap,
+		leadIn.ToCMask,
+		leadIn.nextSegPos,
+		leadIn.dataPos,
+		0, //TODO:
+		0, //TODO:
 	}
 }
 
@@ -288,9 +317,21 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	metaLength := uint64FromTDMS(file, 0, 1)
 	log.Println("Metadata Length: ", metaLength)
 
-	// TODO: Implement
+	leadInSize := uint64(28)
+
 	nextSegPos := uint64(0)
-	dataPos := uint64(0)
+	if segLength == 0xFFFFFFFFFFFFFFFF {
+		log.Printf("Segment incomplete, attempting to Read")
+		fileStat, err := file.Stat()
+		if err != nil {
+			log.Fatal("Error return by file.Stat() in readTDMSLeadIn: ", err)
+		}
+		nextSegPos = uint64(fileStat.Size())
+	} else {
+		nextSegPos = uint64(segmentStartPos) + segLength + leadInSize
+	}
+
+	dataPos := uint64(segmentStartPos) + leadInSize + metaLength
 
 	return LeadInData{
 		tocBitMask,
@@ -314,8 +355,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-// TODO: Add: Previous Segment, Previous Segment Objects
-func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData) map[string]RawDataIndex {
+func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) map[string]RawDataIndex {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -492,6 +532,26 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 		arrayDimension,
 		numValues,
 		channelRawDataSize,
+	}
+}
+
+// REQUIRES
+// ObjMap/Segment.objects
+// segment.nextSegPos
+// segment.dataPos
+func calculateChunks(seg Segment) ChunkCalcs {
+	dataSize := uint64(0)
+	for _, e := range seg.objects {
+		dataSize += e.rawDataSize
+	}
+
+	totalDataSize := seg.nextSegPos - seg.dataPos
+
+	if dataSize < 0 || totalDataSize < 0 {
+		log.Fatal("Negative data size")
+	}
+
+	return ChunkCalcs{
 	}
 }
 
@@ -728,3 +788,4 @@ func averageFloat64Slice(y []float64) (avg float64) {
 
 	return avg / float64(len(y))
 }
+
