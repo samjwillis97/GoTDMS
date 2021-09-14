@@ -10,19 +10,31 @@ import (
 	"time"
 )
 
-type leadInData struct {
+type LeadInData struct {
 	ToCMask       uint32
 	versionNumber uint32
 	nextSegOffset uint64
 	rawDataOffset uint64
+	nextSegPos    uint64
+	dataPos       uint64
 }
 
-type rawDataInfo struct {
-	rawDataIndex   []byte
+type RawDataIndex struct {
 	dataType       tdsDataType
 	arrayDimension uint32
 	numValues      uint64
 	rawDataSize    uint64
+}
+
+type Segment struct {
+	position                 uint64
+	numChunks                uint64
+	objects                  map[string]RawDataIndex
+	kToCMask                 uint32
+	nextSegPos               uint64
+	dataPos                  uint64
+	finalChunkLengthOverride uint64
+	objectIndex              uint64
 }
 
 type tdsDataType uint64
@@ -51,19 +63,23 @@ const (
 	DAQmx      tdsDataType = 0xFFFFFF
 )
 
-	// kTocMetaData (1L << 1)					= 0b0000 0010			= 0x2
-	// kTocRawData (1L << 3)					= 0b0000 1000			= 0x8
-	// kTocDAQmxRawData (1L << 7)			= 0b1000 0000			= 0x80
-	// kToxInterleavedData (1L << 5)  = 0b0010 0000			= 0x20
-	// kTocBigEndian (1L << 6)				= 0b0100 0000			= 0x40
-	// kTocNewObjList (1L << 2)				= 0b0000 0100			= 0x4
+// kTocMetaData (1L << 1)					= 0b0000 0010			= 0x2
+// kTocRawData (1L << 3)					= 0b0000 1000			= 0x8
+// kTocDAQmxRawData (1L << 7)			= 0b1000 0000			= 0x80
+// kToxInterleavedData (1L << 5)  = 0b0010 0000			= 0x20
+// kTocBigEndian (1L << 6)				= 0b0100 0000			= 0x40
+// kTocNewObjList (1L << 2)				= 0b0000 0100			= 0x4
 const (
-	kTocMetaData					uint32 = 0x2
-	kTocRawData						uint32 = 0x8
-	kTocDAQmxRawData			uint32 = 0x80
-	kTocInterleavedData		uint32 = 0x20
-	kTocBigEndian					uint32 = 0x40
-	kTocNewObjList				uint32 = 0x4
+	kTocMetaData        uint32 = 0x2
+	kTocRawData         uint32 = 0x8
+	kTocDAQmxRawData    uint32 = 0x80
+	kTocInterleavedData uint32 = 0x20
+	kTocBigEndian       uint32 = 0x40
+	kTocNewObjList      uint32 = 0x4
+)
+
+var (
+	noRawDataValue = []byte{255, 255, 255, 255}
 )
 
 func main() {
@@ -114,7 +130,7 @@ func displayTDMSGroupChannels(file *os.File, offset int64, whence int) {
 	// Seek to Begining of File
 	// Until EOF
 	//	read segment meta data:
-	//		read lead in to vars	
+	//		read lead in to vars
 	//		read segment to vars
 	//		read properties to vars
 	//			take in file, previous segment data, previous segment?, whether hte next segment offset was set
@@ -126,7 +142,7 @@ func displayTDMSGroupChannels(file *os.File, offset int64, whence int) {
 	//  previous segment = segment
 	//  segment pos = segment.next_segment_pos
 	//  seek file to next segment pos
-	//		
+	//
 }
 
 // Reads a TDMS Segment
@@ -202,7 +218,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int) {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
+func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	segmentStartPos, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
@@ -272,11 +288,17 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
 	metaLength := uint64FromTDMS(file, 0, 1)
 	log.Println("Metadata Length: ", metaLength)
 
-	return leadInData{
+	// TODO: Implement
+	nextSegPos := uint64(0)
+	dataPos := uint64(0)
+
+	return LeadInData{
 		tocBitMask,
 		versionNumber,
 		segLength,
 		metaLength,
+		nextSegPos,
+		dataPos,
 	}
 }
 
@@ -288,14 +310,20 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) leadInData {
 // - Object Properties
 //
 // Starts at Byte Defined by Offset
-// When is the reference point for the offset
+// Whence is the reference point for the offset
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSMetaData(file *os.File, offset int64, whence int, leadin leadInData) map[string]rawDataInfo {
+// TODO: Add: Previous Segment, Previous Segment Objects
+func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData) map[string]RawDataIndex {
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
+	}
+
 	// True if no MetaData
 	if (kTocMetaData & leadin.ToCMask) != kTocMetaData {
-		log.Println("Reuse Previous Segment Metadata")		
+		log.Println("Reuse Previous Segment Metadata")
 		// TODO: Return + Implement
 	}
 
@@ -304,20 +332,20 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin leadInData
 	// TODO: if newObjList or NOT Preiouvs Segment????
 	//			 existing Objects = None
 	//			 orderedObjects = []
-	//			 else copy objects from previous 
+	//			 else copy objects from previous
 
 	// newObjList := ((kTocNewObjList & leadin.ToCMask) == kTocNewObjList)
 
 	log.Println("READING METADATA")
 
-	// Preallocate Map for Objects
-	objMap := make(map[string]rawDataInfo)
+	// Initialize Map for Objects
+	objMap := make(map[string]RawDataIndex)
 
 	// First 4 Bytes have number of objects in metadata
 	numObjects := uint32FromTDMS(file, 0, 1)
 	log.Println("Number of Objects: ", numObjects)
 
-	// var objects = make([]string, numObjects)
+	// ar objects = make([]string, numObjects)
 	for i := uint32(0); i < numObjects; i++ {
 		log.Printf("Reading Object %d \n", i)
 
@@ -325,13 +353,50 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin leadInData
 		objPath := stringFromTDMS(file, 0, 1)
 		log.Printf("Object %d Path: %s\n", i, objPath)
 
-		// Read Object
-		objMap[objPath] = readTDMSObjectInfo(file, 0, 1)
+		// TODO: FINISH
+		// Read Raw Data Index/Length of Index Information
+		// FF FF FF FF means there is no raw data
+		// 69 12 00 00 DAQmx Format Changing Scaler
+		// 69 13 00 00 DAQmx Digital Line Scaler
+		// Matches Previous Segment Same Object i.e. use previous
+		// Otherwise
+		rawDataIndexHeaderBytes := make([]byte, 4)
+		_, err := io.ReadFull(file, rawDataIndexHeaderBytes)
+		if err != nil {
+			log.Fatal("Error return from io.ReadFull in readTDMSObject: ", err)
+		}
+		log.Printf("Object Raw Data Index: % x", rawDataIndexHeaderBytes)
+
+		/*
+			First Check if Already Have Object in List from Previous Segment
+			if Object Already Exists:
+				Update the existing Obejct??
+			else if object path was in previous segment objects:
+				reuse previous segment objects
+			else:
+				if raw data index matches previous:
+					raise error, haven't seen object before
+				else if rawDataPresent:															DONE
+					read raw data index																DONE
+			read num properties																		DONE
+			read properties																				DONE
+			calcaulte chunks
+		*/
+
+		noRawDataPresent := bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue)
+
+		// no Raw Data is Present
+		if noRawDataPresent == 0 {
+		} else {
+			rawDataIndex := readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes)
+			objMap[objPath] = rawDataIndex
+		}
 
 		// Number of Object Properties
 		numProperties := uint32FromTDMS(file, 0, 1)
 		log.Printf("Number of Object %d Properties: %d\n", i, numProperties)
 
+		// Read Properties
 		for j := uint32(0); j < numProperties; j++ {
 			log.Printf("Reading Object %d Property %d\n", i, j)
 			readTDMSProperty(file, 0, 1)
@@ -339,102 +404,6 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin leadInData
 		}
 	}
 	return objMap
-}
-
-// Read the Info for a TDMS Object
-// Includes:
-// - Raw Data Index
-// - Raw Data Index Information
-// Starts at Byte Defined by Offset
-// When is the reference point for the offset
-// 0 = Beginning of File
-// 1 = Current Position
-// 2 = End of File
-func readTDMSObjectInfo(file *os.File, offset int64, whence int) rawDataInfo {
-	// Check first 4 Bytes
-	// if FF FF FF FF No Raw Data -> Read Properties
-	_, err := file.Seek(offset, whence)
-	if err != nil {
-		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
-	}
-
-	// Read Raw Data Index/Length of Index Information
-	// FF FF FF FF means there is no raw data
-	// 69 12 00 00 DAQmx Format Changing Scaler
-	// 69 13 00 00 DAQmx Digital Line Scaler
-	// Matches Previous Segment Same Object i.e. use previous
-	// Otherwise
-	rawDataIndexBytes := make([]byte, 4)
-	_, err = io.ReadFull(file, rawDataIndexBytes)
-	if err != nil {
-		log.Fatal("Error return from io.ReadFull in readTDMSObject: ", err)
-	}
-	indexLength := binary.LittleEndian.Uint32(rawDataIndexBytes)
-	log.Printf("Object Raw Data Index: % x", rawDataIndexBytes)
-
-	noRawDataValue := []byte{255, 255, 255, 255}
-	// IMPLEMENT DAQMX
-
-	rawDataPresent := bytes.Compare(rawDataIndexBytes, noRawDataValue)
-
-	if rawDataPresent == 0 {
-		log.Printf("Object No Raw Data Present\n")
-		// to -> Read Properties
-		return rawDataInfo{
-			rawDataIndexBytes,
-			0,
-			0,
-			0,
-			0,
-		}
-	} else {
-		// Raw Data is Present
-		log.Printf("Object Index Length: %d\n", indexLength)
-
-		// Get Index Information
-		dataType := uint32FromTDMS(file, 0, 1)
-		log.Printf("Object Data Type: %d\n", dataType)
-
-		dataSize := 0
-
-		switch tdsDataType(dataType) {
-		case Int8, Uint8, Boolean:
-			dataSize = 1
-		case Int16, Uint16:
-			dataSize = 2
-		case Int32, Uint32, SGL, SGLwUnit:
-			dataSize = 4
-		case Int64, Uint64, DBL, DBLwUnit:
-			dataSize = 8
-		case Timestamp:
-			dataSize = 16
-		}
-
-		// must equal 1 for v2.0
-		arrayDimension := uint32FromTDMS(file, 0, 1)
-		if arrayDimension != 1 {
-			log.Fatal("Not Valid TDMS 2.0, Data Dimension is not 1")
-		}
-
-		numValues := uint64FromTDMS(file, 0, 1)
-		log.Printf("Object Number of Values: %d\n", numValues)
-
-		// TODO
-		// If String Read Value Size
-
-		// to -> Read Properties
-
-		channelRawDataSize := uint64(dataSize) * uint64(arrayDimension) * numValues
-		log.Printf("Channel Raw Data Size: %d\n", channelRawDataSize)
-
-		return rawDataInfo{
-			rawDataIndexBytes,
-			tdsDataType(dataType),
-			arrayDimension,
-			numValues,
-			channelRawDataSize,
-		}
-	}
 }
 
 // Read the Properties for a TDMS Object
@@ -477,6 +446,52 @@ func readTDMSProperty(file *os.File, offset int64, whence int) {
 		log.Printf("Timestamp Property In Testing\n")
 		timestampValue := timeFromTDMS(file, 0, 1)
 		log.Printf("Property Value: %s\n", timestampValue.String())
+	}
+}
+
+func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeader []byte) RawDataIndex {
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return by file.Seek in readTDMSRawDataIndex: ", err)
+	}
+
+	indexLength := binary.LittleEndian.Uint32(rawDataIndexHeader)
+	log.Printf("Object Index Length: %d\n", indexLength)
+
+	dataType := tdsDataType(uint32FromTDMS(file, 0, 1))
+	log.Printf("Object Data Type: %d\n", dataType)
+
+	// must equal 1 for v2.0
+	arrayDimension := uint32FromTDMS(file, 0, 1)
+	if arrayDimension != 1 {
+		log.Fatal("Not Valid TDMS 2.0, Data Dimension is not 1")
+	}
+
+	numValues := uint64FromTDMS(file, 0, 1)
+	log.Printf("Object Number of Values: %d\n", numValues)
+
+	dataSize := 0
+	switch tdsDataType(dataType) {
+	case Int8, Uint8, Boolean:
+		dataSize = 1
+	case Int16, Uint16:
+		dataSize = 2
+	case Int32, Uint32, SGL, SGLwUnit:
+		dataSize = 4
+	case Int64, Uint64, DBL, DBLwUnit:
+		dataSize = 8
+	case Timestamp:
+		dataSize = 16
+	}
+
+	channelRawDataSize := uint64(dataSize) * uint64(arrayDimension) * numValues
+	log.Printf("Channel Raw Data Size: %d\n", channelRawDataSize)
+
+	return RawDataIndex{
+		tdsDataType(dataType),
+		arrayDimension,
+		numValues,
+		channelRawDataSize,
 	}
 }
 

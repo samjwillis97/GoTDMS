@@ -1,6 +1,6 @@
 # GoTDMS
 
-GoTDMS Library
+GoTDMS is a CLI tool written in Go to Read TDMS Files produced by LabVIEW. A lot of this project is based off of the Python project with a similar goal npTDMS (https://github.com/adamreeve/npTDMS)
 
 ## Primary Functionality
 
@@ -15,5 +15,29 @@ GoTDMS Library
 - Output Group/Channel/s with Offset + Length
   - tdms read data 
 
-## How to List Contents
+## Data Type Definitions from npTDMS
+
+### TDMS Segment
+
+Contains:
+
+- Position
+    - Starting Position, on the first segment, = 0
+- Number of Chunks
+    - from Calculate Chunks
+- Ordered Objects []:
+    - Path
+    - Number Values
+    - Data Size
+    - Has Data?
+    - Data Type
+- ToC Mask
+- Next Segment Position
+  - Determined from Lead In
+- Data Position
+    - Determined from Lead In
+    - Segment Position + Lead Size (28) + Raw Data Offset
+- Final Cunk Lengths Override
+    - from Calculate Chunks
+- Object Index ??
 
