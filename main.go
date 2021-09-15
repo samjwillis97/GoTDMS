@@ -26,10 +26,6 @@ type RawDataIndex struct {
 	rawDataSize    uint64
 }
 
-type ChunkCalcs struct {
-
-}
-
 type Segment struct {
 	position                 uint64
 	numChunks                uint64
@@ -89,14 +85,14 @@ var (
 func main() {
 	initLogging()
 
-	file, err := os.OpenFile("testFiles/test.tdms", os.O_RDONLY, 0666)
+	file, err := os.OpenFile("testFiles/demo.tdms", os.O_RDONLY, 0666)
 	if err != nil {
 		log.Fatal("Error return from os.OpenFile: ", err)
 	}
 
 	// Reading a TDMS File
 	// https://www.ni.com/en-au/support/documentation/supplemental/07/tdms-file-format-internal-structure.html
-	// TODO: Proper Reading and More Error Checks with File Lengths 
+	// TODO: Proper Reading and More Error Checks with File Lengths
 	// TODO: Workout and Implement Interfaces
 
 	emptySegment := Segment{
@@ -111,7 +107,7 @@ func main() {
 	}
 
 	firstSegment := readTDMSSegment(file, 0, 1, emptySegment)
-	readTDMSSegment(file, 0, 1, firstSegment)
+	readTDMSSegment(file, int64(firstSegment.nextSegPos), 0, firstSegment)
 
 	finalPos, err := file.Seek(0, 1)
 
@@ -173,6 +169,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
 	}
+	log.Printf("Reading TDMS Segement starting at: %d", startPos)
 
 	// Read TDMS Lead In
 	// leadIn := readTDMSLeadIn(file, offset, whence)
@@ -181,23 +178,8 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 	// Read TDMS Meta Data
 	objMap := readTDMSMetaData(file, 0, 1, leadIn, prevSegment)
 
-	// Calculations for Raw Data
-
-	// Determining the Raw Data Size of One Chunk
-	// By accumulating the raw data size of all channels
-	chunkSize := int64(0)
-	for _, element := range objMap {
-		chunkSize += int64(element.rawDataSize)
-	}
-
-	// TODO: Calculate Raw Data Size of Total Chunks
-	// Next Segment Offset - Raw Data Offset
-	// IF Next Segment Offset = -1, raw data size of total chunks
-	// 	equals the file size minus the absolute beginning position
-	// 	of the raw data
-
-	// TODO: Calculate the Number of Chunks
-	// Raw Data Size of total Chunks / Raw Data size of One Chunk
+	// Calculate Number of Chunks
+	numChunks := calculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
 
 	// TODO: Finish Reading Raw Data
 	// if (0b100000 & leadIn.ToCMask) == 0b100000 {
@@ -205,26 +187,26 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 	// }
 
 	// Read Data Ch by Ch
-	for key, element := range objMap {
-		switch element.dataType {
-		default:
-			_, err := file.Seek(int64(element.rawDataSize), 1)
-			if err != nil {
-				log.Fatal("Error return by file.Seek in readTDMSSegment: ", err)
-			}
-		case DBL:
-			data := DBLArrayFromTDMS(file, int64(element.numValues), 0, 1)
-			dataMin, dataMax := minMaxFloat64Slice(data)
-			log.Printf("Read %s Values\n", key)
-			log.Printf("Number of Values: %d\n", len(data))
-			log.Printf("Max Value: %.6f\n", dataMax)
-			log.Printf("Min Value: %.6f\n", dataMin)
-			log.Printf("Average Value: %.6f\n", averageFloat64Slice(data))
-		}
-	}
+	// for key, element := range objMap {
+	// 	switch element.dataType {
+	// 	default:
+	// 		_, err := file.Seek(int64(element.rawDataSize), 1)
+	// 		if err != nil {
+	// 			log.Fatal("Error return by file.Seek in readTDMSSegment: ", err)
+	// 		}
+	// 	case DBL:
+	// 		data := DBLArrayFromTDMS(file, int64(element.numValues), 0, 1)
+	// 		dataMin, dataMax := minMaxFloat64Slice(data)
+	// 		log.Printf("Read %s Values\n", key)
+	// 		log.Printf("Number of Values: %d\n", len(data))
+	// 		log.Printf("Max Value: %.6f\n", dataMax)
+	// 		log.Printf("Min Value: %.6f\n", dataMin)
+	// 		log.Printf("Average Value: %.6f\n", averageFloat64Slice(data))
+	// 	}
+	// }
 	return Segment{
 		uint64(startPos),
-		0, //TODO:
+		numChunks,
 		objMap,
 		leadIn.ToCMask,
 		leadIn.nextSegPos,
@@ -374,12 +356,19 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	//			 orderedObjects = []
 	//			 else copy objects from previous
 
-	// newObjList := ((kTocNewObjList & leadin.ToCMask) == kTocNewObjList)
+	prevSegObjectNum := len(prevSegment.objects)
+
+	// Initialize Empty Map for Objects
+	objMap := make(map[string]RawDataIndex)
+
+	if ((kTocNewObjList & leadin.ToCMask) == kTocNewObjList) || prevSegObjectNum == 0 {
+	} else {
+		// There can be a list of new objects that are appended,
+		// or previous objects that are repeated with changed properties
+		objMap = prevSegment.objects
+	}
 
 	log.Println("READING METADATA")
-
-	// Initialize Map for Objects
-	objMap := make(map[string]RawDataIndex)
 
 	// First 4 Bytes have number of objects in metadata
 	numObjects := uint32FromTDMS(file, 0, 1)
@@ -409,10 +398,10 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 
 		/*
 			First Check if Already Have Object in List from Previous Segment
-			if Object Already Exists:
-				Update the existing Obejct??
-			else if object path was in previous segment objects:
-				reuse previous segment objects
+			if Object Already Exists:															DONE?
+				Update the existing Obejct??												DONE?
+			else if object path was in previous segment objects:	DONE?
+				reuse previous segment objects											DONE?
 			else:
 				if raw data index matches previous:
 					raise error, haven't seen object before
@@ -422,6 +411,20 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 			read properties																				DONE
 			calcaulte chunks
 		*/
+
+		// check if we already have objPath
+		// only executes if present true, present will be true if found in map
+		// first value is the value found
+		if _, present := objMap[objPath]; present {
+			// if true, update Object
+			// TODO: Check
+			objMap[objPath] = RawDataIndex{}
+		} else if val, present := prevSegment.objects[objPath]; present {
+			// reuse previous object
+			objMap[objPath] = val
+		} else {
+
+		}
 
 		noRawDataPresent := bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue)
 
@@ -539,19 +542,35 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 // ObjMap/Segment.objects
 // segment.nextSegPos
 // segment.dataPos
-func calculateChunks(seg Segment) ChunkCalcs {
+func calculateChunks(objects map[string]RawDataIndex, nextSegPos uint64, dataPos uint64) uint64 {
 	dataSize := uint64(0)
-	for _, e := range seg.objects {
+	for _, e := range objects {
 		dataSize += e.rawDataSize
 	}
+	log.Printf("Data Size: %d", dataSize)
 
-	totalDataSize := seg.nextSegPos - seg.dataPos
+	totalDataSize := nextSegPos - dataPos
+	log.Printf("Total Data Size: %d", totalDataSize)
 
 	if dataSize < 0 || totalDataSize < 0 {
 		log.Fatal("Negative data size")
+	} else if dataSize == 0 {
+		// npTDMS: sometimes kTocRawData is set, but there isn't actually any data
+		if totalDataSize != dataSize {
+			log.Fatal("Zero channel data size but data length")
+		}
+		numChunks := uint64(0)
+		return numChunks
 	}
 
-	return ChunkCalcs{
+	// Checking for Multiple
+	chunkRemainder := totalDataSize % dataSize
+	if chunkRemainder == 0 {
+		numChunks := uint64(totalDataSize / dataSize)
+		return numChunks
+	} else {
+		log.Fatal("Data Size is not a multiple of Chunk Size")
+		return uint64(0)
 	}
 }
 
@@ -788,4 +807,3 @@ func averageFloat64Slice(y []float64) (avg float64) {
 
 	return avg / float64(len(y))
 }
-
