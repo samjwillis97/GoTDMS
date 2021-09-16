@@ -19,6 +19,11 @@ type LeadInData struct {
 	dataPos       uint64
 }
 
+type SegmentObject struct {
+	rawDataIndexHeader	[]byte
+	rawDataIndex				RawDataIndex
+}
+
 type RawDataIndex struct {
 	dataType       tdsDataType
 	arrayDimension uint32
@@ -29,7 +34,7 @@ type RawDataIndex struct {
 type Segment struct {
 	position                 uint64
 	numChunks                uint64
-	objects                  map[string]RawDataIndex
+	objects                  map[string]SegmentObject
 	kToCMask                 uint32
 	nextSegPos               uint64
 	dataPos                  uint64
@@ -99,7 +104,7 @@ func main() {
 	emptySegment := Segment{
 		0,
 		0,
-		map[string]RawDataIndex{},
+		map[string]SegmentObject{},
 		0,
 		0,
 		0,
@@ -338,7 +343,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) (map[string]RawDataIndex, bool) {
+func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) (map[string]SegmentObject) {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -352,15 +357,10 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 
 	// TODO: Big Endianness with TocMask
 
-	// TODO: if newObjList or NOT Preiouvs Segment????
-	//			 existing Objects = None
-	//			 orderedObjects = []
-	//			 else copy objects from previous
-
 	prevSegObjectNum := len(prevSegment.objects)
 
 	// Initialize Empty Map for Objects
-	objMap := make(map[string]RawDataIndex)
+	objMap := make(map[string]SegmentObject)
 
 	if ((kTocNewObjList & leadin.ToCMask) == kTocNewObjList) || prevSegObjectNum == 0 {
 	} else {
@@ -421,40 +421,48 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 			// TODO: UPDATE EXISTING OBJECT
 		} else if val, present := prevSegment.objects[objPath]; present {
 			// reuse previous object
-			// TODO:
-			// if RawDataIndexHeader == RAW DATA INDEX NO DATA
-			//		Reuse Object but leave data index information as set previously?
-			//		if previousSegment HAS DATA
-			//			copy prev to current
-			//			current.hasData = FALSE
-			//		else
-			//			copy completely to current
-			// else if RawDataIndexHeader == RAW_DATA_INDEX_MATCHES_PREVIOUS
-			//		if not previous.HasData:
-			//			copy prev to current
-			//			current.HasData = True
 			if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) == 0 {
-				if val.rawDataSize == 0 {
-					objMap[objPath] = val		
+				// Reuse Segment  But Leave Data Index Information as Set Previously
+				if bytes.Compare(val.rawDataIndexHeader, noRawDataValue) == 0 {
+					// Previous Segment has Data
+					// Copy Previos to Current, Leaving Header
+					objMap[objPath] = SegmentObject{
+						rawDataIndexHeaderBytes,
+						val.rawDataIndex,
+					}
+				} else {
+					// Copy Completely
+					objMap[objPath] = val
 				}
-
+			// Matches Previous
 			} else if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
-
+				if bytes.Compare(val.rawDataIndexHeader, noRawDataValue) != 0 {
+					// Copy Previos to Current, Leaving Header
+					objMap[objPath] = SegmentObject{
+						rawDataIndexHeaderBytes,
+						val.rawDataIndex,
+					}
+				} else {
+					// Copy Completely
+					objMap[objPath] = val
+				}
 			} else {
-
+				// Changed Metadata in this Section
+				objMap[objPath] = SegmentObject{
+					rawDataIndexHeaderBytes,
+					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+				}
 			}
 		} else {
-
-		}
-
-		// = 0 if TRUE
-		noRawDataPresent := bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue)
-
-		// no Raw Data is Present
-		if noRawDataPresent == 0 {
-		} else {
-			rawDataIndex := readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes)
-			objMap[objPath] = rawDataIndex
+			// New Segment Object
+			if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
+				log.Fatal("Raw Data Index says to reuse previous, though this object has not been seen before")
+			} else if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) != 0 {
+				objMap[objPath] = SegmentObject{
+					rawDataIndexHeaderBytes,
+					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+				}
+			}
 		}
 
 		// Number of Object Properties
@@ -468,7 +476,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 
 		}
 	}
-	return objMap, hasData
+	return objMap
 }
 
 // Read the Properties for a TDMS Object
@@ -564,10 +572,10 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 // ObjMap/Segment.objects
 // segment.nextSegPos
 // segment.dataPos
-func calculateChunks(objects map[string]RawDataIndex, nextSegPos uint64, dataPos uint64) uint64 {
+func calculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPos uint64) uint64 {
 	dataSize := uint64(0)
 	for _, e := range objects {
-		dataSize += e.rawDataSize
+		dataSize += e.rawDataIndex.rawDataSize
 	}
 	log.Printf("Data Size: %d", dataSize)
 
