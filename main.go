@@ -80,6 +80,7 @@ const (
 
 var (
 	noRawDataValue = []byte{255, 255, 255, 255}
+	matchesPreviousValue = []byte{0, 0, 0, 0}
 )
 
 func main() {
@@ -211,8 +212,8 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 		leadIn.ToCMask,
 		leadIn.nextSegPos,
 		leadIn.dataPos,
-		0, //TODO:
-		0, //TODO:
+		0, //TODO: Implement
+		0, //TODO: Implement
 	}
 }
 
@@ -337,7 +338,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) map[string]RawDataIndex {
+func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) (map[string]RawDataIndex, bool) {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -417,15 +418,36 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		// first value is the value found
 		if _, present := objMap[objPath]; present {
 			// if true, update Object
-			// TODO: Check
-			objMap[objPath] = RawDataIndex{}
+			// TODO: UPDATE EXISTING OBJECT
 		} else if val, present := prevSegment.objects[objPath]; present {
 			// reuse previous object
-			objMap[objPath] = val
+			// TODO:
+			// if RawDataIndexHeader == RAW DATA INDEX NO DATA
+			//		Reuse Object but leave data index information as set previously?
+			//		if previousSegment HAS DATA
+			//			copy prev to current
+			//			current.hasData = FALSE
+			//		else
+			//			copy completely to current
+			// else if RawDataIndexHeader == RAW_DATA_INDEX_MATCHES_PREVIOUS
+			//		if not previous.HasData:
+			//			copy prev to current
+			//			current.HasData = True
+			if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) == 0 {
+				if val.rawDataSize == 0 {
+					objMap[objPath] = val		
+				}
+
+			} else if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
+
+			} else {
+
+			}
 		} else {
 
 		}
 
+		// = 0 if TRUE
 		noRawDataPresent := bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue)
 
 		// no Raw Data is Present
@@ -446,7 +468,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 
 		}
 	}
-	return objMap
+	return objMap, hasData
 }
 
 // Read the Properties for a TDMS Object
