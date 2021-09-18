@@ -111,6 +111,7 @@ func main() {
 }
 
 func handleFlags() {
+	// SUBCOMMANDS ARE THE ANSWER
 	log.Tracef("FLAG INIT")
 
 	var filePath string
