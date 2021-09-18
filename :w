@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log"
 	"math"
 	"os"
 	"time"
-	"strings"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type LeadInData struct {
@@ -94,7 +92,25 @@ func main() {
 		log.Fatal("Error return from os.OpenFile: ", err)
 	}
 
-	displayTDMSGroups(file, 0, 1)
+	// Reading a TDMS File
+	// https://www.ni.com/en-au/support/documentation/supplemental/07/tdms-file-format-internal-structure.html
+	// TODO: Proper Reading and More Error Checks with File Lengths
+	// TODO: Workout and Implement Interfaces
+
+	// emptySegment := Segment{
+	// 	0,
+	// 	0,
+	// 	map[string]SegmentObject{},
+	// 	0,
+	// 	0,
+	// 	0,
+	// 	0,
+	// 	0,
+	// }
+
+	// firstSegment := readTDMSSegment(file, 0, 1, emptySegment)
+	// readTDMSSegment(file, int64(firstSegment.nextSegPos), 0, firstSegment)
+	displayTDMSGroupChannels(file, 0, 1)
 
 	finalPos, err := file.Seek(0, 1)
 
@@ -103,7 +119,7 @@ func main() {
 	}
 
 	file.Close()
-	log.Debugf("TDMS Closed at position: %d\n", finalPos)
+	log.Printf("TDMS Closed at position: %d\n", finalPos)
 }
 
 func initLogging() {
@@ -115,16 +131,14 @@ func initLogging() {
 
 	// Creates a MultiWrite, duplicates its write sto all the provided writers
 	// In this instance, the file and stdout
-	// mw := io.MultiWriter(os.Stdout, file)
-	mw := io.MultiWriter(file)
+	mw := io.MultiWriter(os.Stdout, file)
 
 	log.SetOutput(mw)
-	log.SetLevel(log.DebugLevel)
 
-	log.Debugln("TDMS Reader Init")
+	log.Println("TDMS Reader Init")
 }
 
-func displayTDMSGroups(file *os.File, offset int64, whence int) {
+func displayTDMSGroupChannels(file *os.File, offset int64, whence int) {
 	// Get File Size
 	fi, err := file.Stat()
 	if err != nil {
@@ -164,28 +178,26 @@ func displayTDMSGroups(file *os.File, offset int64, whence int) {
 	// Remove all duplicates
 	// Remove "/"
 	// Remove "/<string>/<string>"
+	
 	// Effectively using a map as a set
-	paths := make(map[string]bool)
+	log.Println(segments)
+	var paths map[string]bool
 	for _, seg := range segments {
+		log.Println(seg)
 		for path := range seg.objects {
+			log.Println(path)
 			exists := paths[path]
+			log.Println(exists)
 			if !(exists) {
 				paths[path] = true
 			}
 		}
 	}
 
-	var groups []string
-	for path := range paths {
-		if (path != "/") && (len(strings.Split(path, "/")) == 2) {
-			groups = append(groups, path)
-		}
-	}
-
-	log.Debugln(groups)
+	log.Println(paths)
 	
 
-	log.Debugf("Finished Reading TDMS\n")
+	log.Printf("Finished Reading TDMS\n")
 
 }
 
@@ -202,7 +214,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
 	}
-	log.Debugf("Reading TDMS Segement starting at: %d", startPos)
+	log.Printf("Reading TDMS Segement starting at: %d", startPos)
 
 	// Read TDMS Lead In
 	// leadIn := readTDMSLeadIn(file, offset, whence)
@@ -213,9 +225,6 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 
 	// Calculate Number of Chunks
 	numChunks := calculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
-
-	// Object Index
-	index := prevSegment.objectIndex + 1
 
 	// TODO: Finish Reading Raw Data
 	// if (0b100000 & leadIn.ToCMask) == 0b100000 {
@@ -233,11 +242,11 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 	// 	case DBL:
 	// 		data := DBLArrayFromTDMS(file, int64(element.numValues), 0, 1)
 	// 		dataMin, dataMax := minMaxFloat64Slice(data)
-	// 		log.Debugf("Read %s Values\n", key)
-	// 		log.Debugf("Number of Values: %d\n", len(data))
-	// 		log.Debugf("Max Value: %.6f\n", dataMax)
-	// 		log.Debugf("Min Value: %.6f\n", dataMin)
-	// 		log.Debugf("Average Value: %.6f\n", averageFloat64Slice(data))
+	// 		log.Printf("Read %s Values\n", key)
+	// 		log.Printf("Number of Values: %d\n", len(data))
+	// 		log.Printf("Max Value: %.6f\n", dataMax)
+	// 		log.Printf("Min Value: %.6f\n", dataMin)
+	// 		log.Printf("Average Value: %.6f\n", averageFloat64Slice(data))
 	// 	}
 	// }
 	return Segment{
@@ -248,7 +257,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 		leadIn.nextSegPos,
 		leadIn.dataPos,
 		0, //TODO: Implement
-		index, 
+		0, //TODO: Implement
 	}
 }
 
@@ -271,7 +280,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
 	}
 
-	log.Debugln("READING LEAD-IN")
+	log.Println("READING LEAD-IN")
 
 	// Starts with a 4-byte tag that identifies a TDMS Segment ("TDSm")
 	segStartTag := make([]byte, 4)
@@ -282,7 +291,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	if string(segStartTag) != "TDSm" {
 		log.Fatal("Segment is not a TDMS")
 	}
-	log.Debugln("Valid TDMS Segment Starting at: ", segmentStartPos)
+	log.Println("Valid TDMS Segment Starting at: ", segmentStartPos)
 
 	// 4 Byte ToC BitMask
 	// Example
@@ -295,31 +304,31 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 		log.Fatal("Error return from io.ReadFull in readTDMSLeadIn: ", err)
 	}
 	tocBitMask := binary.LittleEndian.Uint32(tocBitMaskBytes)
-	log.Debugln("ToC BitMask: ", tocBitMask)
+	log.Println("ToC BitMask: ", tocBitMask)
 	if (kTocMetaData & tocBitMask) == kTocMetaData {
-		log.Debugln("Segment Contains Meta Data")
+		log.Println("Segment Contains Meta Data")
 	}
 	if (0b1000 & tocBitMask) == 0b1000 {
-		log.Debugln("Segment Contains Raw Data")
+		log.Println("Segment Contains Raw Data")
 	}
 	if (0b10000000 & tocBitMask) == 0b10000000 {
-		log.Debugln("Segment Contains DAQmx Raw Data")
+		log.Println("Segment Contains DAQmx Raw Data")
 	}
 	if (0b100000 & tocBitMask) == 0b100000 {
-		log.Debugln("Segment Contains Interleaved Data")
+		log.Println("Segment Contains Interleaved Data")
 	}
 	if (0b1000000 & tocBitMask) == 0b1000000 {
-		log.Debugln("Segment Contains Big Endian Data")
+		log.Println("Segment Contains Big Endian Data")
 	}
 	if (0b100 & tocBitMask) == 0b100 {
-		log.Debugln("Segment Contains New Object List")
+		log.Println("Segment Contains New Object List")
 	}
 
 	// 4 Byte Version Number
 	// 4713 = v2.0
 	// 4712 = Older
 	versionNumber := uint32FromTDMS(file, 0, 1)
-	log.Debugln("Version Number: ", versionNumber)
+	log.Println("Version Number: ", versionNumber)
 
 	// 8 Bytes - Length of Remaining Segment
 	// Also known as Next Segment Offset
@@ -327,19 +336,19 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	// If an application encounters a problem writing, all bytes will = 0xFF
 	// can only happen at EOF
 	segLength := uint64FromTDMS(file, 0, 1)
-	log.Debugln("Segment Length: ", segLength)
+	log.Println("Segment Length: ", segLength)
 
 	// 8 Bytes - Length of Metadata in Segment
 	// Also known as raw data offset
 	// If segment contains no metadata will = 0
 	metaLength := uint64FromTDMS(file, 0, 1)
-	log.Debugln("Metadata Length: ", metaLength)
+	log.Println("Metadata Length: ", metaLength)
 
 	leadInSize := uint64(28)
 
 	nextSegPos := uint64(0)
 	if segLength == 0xFFFFFFFFFFFFFFFF {
-		log.Debugf("Segment incomplete, attempting to Read")
+		log.Printf("Segment incomplete, attempting to Read")
 		fileStat, err := file.Stat()
 		if err != nil {
 			log.Fatal("Error return by file.Stat() in readTDMSLeadIn: ", err)
@@ -380,12 +389,11 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	}
 
 	// Initialize Empty Map for Objects
-	// TODO: Change to a Slice with a Map for Lookup
 	objMap := make(map[string]SegmentObject)
 
 	// True if no MetaData
 	if (kTocMetaData & leadin.ToCMask) != kTocMetaData {
-		log.Debugln("Reuse Previous Segment Metadata")
+		log.Println("Reuse Previous Segment Metadata")
 		return prevSegment.objects
 	}
 
@@ -400,19 +408,19 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		objMap = prevSegment.objects
 	}
 
-	log.Debugln("READING METADATA")
+	log.Println("READING METADATA")
 
 	// First 4 Bytes have number of objects in metadata
 	numObjects := uint32FromTDMS(file, 0, 1)
-	log.Debugln("Number of Objects: ", numObjects)
+	log.Println("Number of Objects: ", numObjects)
 
 	// ar objects = make([]string, numObjects)
 	for i := uint32(0); i < numObjects; i++ {
-		log.Debugf("Reading Object %d \n", i)
+		log.Printf("Reading Object %d \n", i)
 
 		// Read Object Path
 		objPath := stringFromTDMS(file, 0, 1)
-		log.Debugf("Object %d Path: %s\n", i, objPath)
+		log.Printf("Object %d Path: %s\n", i, objPath)
 
 		// Read Raw Data Index/Length of Index Information
 		// FF FF FF FF means there is no raw data
@@ -425,13 +433,13 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		if err != nil {
 			log.Fatal("Error return from io.ReadFull in readTDMSObject: ", err)
 		}
-		log.Debugf("Object Raw Data Index: % x", rawDataIndexHeaderBytes)
+		log.Printf("Object Raw Data Index: % x", rawDataIndexHeaderBytes)
 
 		// check if we already have objPath
 		// only executes if present true, present will be true if found in map
 		// first value is the value found
 		if val, present := objMap[objPath]; present {
-			log.Debugf("Updating Existing Object\n")
+			log.Printf("Updating Existing Object\n")
 			// Current Header says No Data
 			if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) == 0 {
 				// Matched Header says Has Data
@@ -458,7 +466,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 				}
 			}
 		} else if val, present := prevSegment.objects[objPath]; present {
-			log.Debugf("Reusing Previous Segment Object\n")
+			log.Printf("Reusing Previous Segment Object\n")
 			// reuse previous object
 			if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) == 0 {
 				// Reuse Segment  But Leave Data Index Information as Set Previously
@@ -493,7 +501,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 				}
 			}
 		} else {
-			log.Debugf("New Segment Object\n")
+			log.Printf("New Segment Object\n")
 			// New Segment Object
 			if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
 				log.Fatal("Raw Data Index says to reuse previous, though this object has not been seen before")
@@ -502,26 +510,16 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 					rawDataIndexHeaderBytes,
 					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
-			} else {
-				objMap[objPath] = SegmentObject{
-					rawDataIndexHeaderBytes,
-					RawDataIndex{
-						0,
-						0,
-						0,
-						0,
-					},	
-				}
 			}
 		}
 
 		// Number of Object Properties
 		numProperties := uint32FromTDMS(file, 0, 1)
-		log.Debugf("Number of Object %d Properties: %d\n", i, numProperties)
+		log.Printf("Number of Object %d Properties: %d\n", i, numProperties)
 
 		// Read Properties
 		for j := uint32(0); j < numProperties; j++ {
-			log.Debugf("Reading Object %d Property %d\n", i, j)
+			log.Printf("Reading Object %d Property %d\n", i, j)
 			readTDMSProperty(file, 0, 1)
 		}
 	}
@@ -539,9 +537,9 @@ func readTDMSProperty(file *os.File, offset int64, whence int) {
 
 	// Property Name
 	propertyName := stringFromTDMS(file, 0, 1)
-	log.Debugf("Property Name: %s\n", propertyName)
+	log.Printf("Property Name: %s\n", propertyName)
 
-	// Debuged in Hex
+	// Printed in Hex
 	propertyDataType := uint32FromTDMS(file, 0, 1)
 	propertyTdsDataType := tdsDataType(propertyDataType)
 	// TODO
@@ -551,23 +549,23 @@ func readTDMSProperty(file *os.File, offset int64, whence int) {
 		log.Fatal("Property Data Type Unkown")
 	case String:
 		stringValue := stringFromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %s\n", stringValue)
+		log.Printf("Property Value: %s\n", stringValue)
 	case Int32:
 		int32Value := int32FromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %d\n", int32Value)
+		log.Printf("Property Value: %d\n", int32Value)
 	case Uint32:
 		uint32Value := uint32FromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %d\n", uint32Value)
+		log.Printf("Property Value: %d\n", uint32Value)
 	case Uint64:
 		uint64Value := uint64FromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %d\n", uint64Value)
+		log.Printf("Property Value: %d\n", uint64Value)
 	case DBL:
 		DBLValue := DBLFromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %.6f\n", DBLValue)
+		log.Printf("Property Value: %.6f\n", DBLValue)
 	case Timestamp:
-		log.Debugf("Timestamp Property In Testing\n")
+		log.Printf("Timestamp Property In Testing\n")
 		timestampValue := timeFromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %s\n", timestampValue.String())
+		log.Printf("Property Value: %s\n", timestampValue.String())
 	}
 }
 
@@ -578,10 +576,10 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 	}
 
 	indexLength := binary.LittleEndian.Uint32(rawDataIndexHeader)
-	log.Debugf("Object Index Length: %d\n", indexLength)
+	log.Printf("Object Index Length: %d\n", indexLength)
 
 	dataType := tdsDataType(uint32FromTDMS(file, 0, 1))
-	log.Debugf("Object Data Type: %d\n", dataType)
+	log.Printf("Object Data Type: %d\n", dataType)
 
 	// must equal 1 for v2.0
 	arrayDimension := uint32FromTDMS(file, 0, 1)
@@ -590,7 +588,7 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 	}
 
 	numValues := uint64FromTDMS(file, 0, 1)
-	log.Debugf("Object Number of Values: %d\n", numValues)
+	log.Printf("Object Number of Values: %d\n", numValues)
 
 	dataSize := 0
 	switch tdsDataType(dataType) {
@@ -607,7 +605,7 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 	}
 
 	channelRawDataSize := uint64(dataSize) * uint64(arrayDimension) * numValues
-	log.Debugf("Channel Raw Data Size: %d\n", channelRawDataSize)
+	log.Printf("Channel Raw Data Size: %d\n", channelRawDataSize)
 
 	return RawDataIndex{
 		tdsDataType(dataType),
@@ -626,10 +624,10 @@ func calculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPo
 	for _, e := range objects {
 		dataSize += e.rawDataIndex.rawDataSize
 	}
-	log.Debugf("Data Size: %d", dataSize)
+	log.Printf("Data Size: %d", dataSize)
 
 	totalDataSize := nextSegPos - dataPos
-	log.Debugf("Total Data Size: %d", totalDataSize)
+	log.Printf("Total Data Size: %d", totalDataSize)
 
 	if dataSize < 0 || totalDataSize < 0 {
 		log.Fatal("Negative data size")
@@ -752,7 +750,7 @@ func uint32ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) 
 		endBit := startBit + size
 		val := binary.LittleEndian.Uint32(intByteArray[startBit:endBit])
 		vals = append(vals, val)
-		// log.Debugf("Value %d: %d\n", i, val)
+		// log.Printf("Value %d: %d\n", i, val)
 	}
 
 	return vals
@@ -779,7 +777,7 @@ func uint64ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) 
 		endBit := startBit + size
 		val := binary.LittleEndian.Uint64(intByteArray[startBit:endBit])
 		vals = append(vals, val)
-		// log.Debugf("Value %d: %d\n", i, val)
+		// log.Printf("Value %d: %d\n", i, val)
 	}
 
 	return vals
@@ -806,7 +804,7 @@ func DBLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []f
 		endBit := startBit + size
 		val := math.Float64frombits(binary.LittleEndian.Uint64(intByteArray[startBit:endBit]))
 		vals = append(vals, val)
-		// log.Debugf("Value %d: %.2f\n", i, val)
+		// log.Printf("Value %d: %.2f\n", i, val)
 	}
 
 	return vals
