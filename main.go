@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 	"strings"
+	"flag"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -89,6 +90,9 @@ var (
 func main() {
 	initLogging()
 
+	log.Tracef("MAIN INIT")
+	handleFlags()
+
 	file, err := os.OpenFile("testFiles/test.tdms", os.O_RDONLY, 0666)
 	if err != nil {
 		log.Fatal("Error return from os.OpenFile: ", err)
@@ -106,6 +110,16 @@ func main() {
 	log.Debugf("TDMS Closed at position: %d\n", finalPos)
 }
 
+func handleFlags() {
+	log.Tracef("FLAG INIT")
+
+	var filePath string
+	flag.StringVar(&filePath, "", "", "TDMS File Path")
+	flag.Parse()
+
+	log.Debugf("Read File Path: %s", filePath)
+}
+
 func initLogging() {
 	// If the file doesnt exit create it, or append to the file
 	file, err := os.OpenFile("log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
@@ -119,7 +133,13 @@ func initLogging() {
 	mw := io.MultiWriter(file)
 
 	log.SetOutput(mw)
-	log.SetLevel(log.DebugLevel)
+	// log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.TraceLevel)
+	// log.SetReportCaller(true)
+	log.SetFormatter(&log.TextFormatter{
+		DisableColors: true,
+		FullTimestamp: true,
+	})
 
 	log.Debugln("TDMS Reader Init")
 }
