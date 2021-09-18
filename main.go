@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 	"strings"
+	"fmt"
 	"flag"
 
 	log "github.com/sirupsen/logrus"
@@ -87,41 +88,90 @@ var (
 	daqmxDigitalLineScaler    = []byte{69, 13, 00, 00}
 )
 
+const version string = "0.0.0.0"
+
 func main() {
-	initLogging()
+	var debug bool
+	var help bool
+	var json bool
 
-	log.Tracef("MAIN INIT")
-	handleFlags()
-
-	file, err := os.OpenFile("testFiles/test.tdms", os.O_RDONLY, 0666)
-	if err != nil {
-		log.Fatal("Error return from os.OpenFile: ", err)
-	}
-
-	displayTDMSGroups(file, 0, 1)
-
-	finalPos, err := file.Seek(0, 1)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	file.Close()
-	log.Debugf("TDMS Closed at position: %d\n", finalPos)
-}
-
-func handleFlags() {
-	// SUBCOMMANDS ARE THE ANSWER
-	log.Tracef("FLAG INIT")
-
-	var filePath string
-	flag.StringVar(&filePath, "", "", "TDMS File Path")
+	flag.BoolVar(&json, "json", false, "Output in JSON Format")
+	flag.BoolVar(&debug, "d", false, "Output Debug Log")
+	flag.BoolVar(&debug, "debug", false, "Output Debug Log")
+	flag.BoolVar(&help, "h", false, "Help")
+	flag.BoolVar(&help, "help", false, "Help")
 	flag.Parse()
 
-	log.Debugf("Read File Path: %s", filePath)
+	if help {
+		printHelp()
+		os.Exit(0)
+	}
+
+	args := flag.Args()
+
+	initLogging(debug)
+
+	if len(args) < 1 {
+		printHelp()
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "list":
+		switch args[1] {
+		case "groups":
+			log.Debugln(len(os.Args))
+			if len(args) < 3 {
+				fmt.Println("File Path Missing")
+				log.Fatal("File path missing")
+			} else {
+				filePath := args[2]
+				log.Debugln("Opening: ", filePath)
+				if _, err := os.Stat(filePath); os.IsNotExist(err) {
+					fmt.Println("File does not exist")
+					log.Fatal("File does not exist")
+				} else {
+					file, err := os.OpenFile(filePath, os.O_RDONLY, 0666)
+					if err != nil {
+						log.Fatal("Error opening TDMS File")
+					}
+					displayTDMSGroups(file, 0, 1)
+					file.Close()
+				}
+			}
+		default:
+			fmt.Println("Unkown Object to List")
+			printHelp()
+		}
+	default:
+		fmt.Println("Unkown Command")
+		printHelp()
+	}
 }
 
-func initLogging() {
+func printHelp() {
+	fmt.Println("NAME:")
+	fmt.Println("  GoTDMS - Command-line TDMS Reader written in Go")
+	fmt.Println()
+	fmt.Println("USAGE:")
+	fmt.Println("  GoTDMS [global options] command subcommand [options] [arguments...]")
+	fmt.Println()
+	fmt.Println("VERSION:")
+	fmt.Print("  ")
+	fmt.Println(version)
+	fmt.Println()
+	fmt.Println("COMMANDS:")
+	fmt.Println("    help")
+	fmt.Println("    list")
+	fmt.Println()
+	fmt.Println("GLOBAL OPTIONS:")
+	fmt.Println("  --debug, -d")
+	fmt.Println("  --help, -h")
+	fmt.Println("  --json")
+	fmt.Println("  --version, -v")
+}
+
+func initLogging(debug bool) {
 	// If the file doesnt exit create it, or append to the file
 	file, err := os.OpenFile("log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -134,15 +184,15 @@ func initLogging() {
 	mw := io.MultiWriter(file)
 
 	log.SetOutput(mw)
-	// log.SetLevel(log.DebugLevel)
-	log.SetLevel(log.TraceLevel)
+
+	if debug {
+		log.SetLevel(log.DebugLevel)
+	}
 	// log.SetReportCaller(true)
 	log.SetFormatter(&log.TextFormatter{
 		DisableColors: true,
 		FullTimestamp: true,
 	})
-
-	log.Debugln("TDMS Reader Init")
 }
 
 func displayTDMSGroups(file *os.File, offset int64, whence int) {
@@ -200,6 +250,9 @@ func displayTDMSGroups(file *os.File, offset int64, whence int) {
 	for path := range paths {
 		if (path != "/") && (len(strings.Split(path, "/")) == 2) {
 			groups = append(groups, path)
+			formatted := strings.Replace(path, "/", "", -1)
+			formatted = strings.Replace(formatted, "'", "", -1)
+			fmt.Println(formatted)
 		}
 	}
 
