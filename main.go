@@ -3,13 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
+	"fmt"
 	"io"
 	"math"
 	"os"
-	"time"
 	"strings"
-	"fmt"
-	"flag"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -135,7 +135,28 @@ func main() {
 					if err != nil {
 						log.Fatal("Error opening TDMS File")
 					}
-					displayTDMSGroups(file, 0, 1)
+					displayTDMSGroups(file)
+					file.Close()
+				}
+			}
+		case "channels":
+			log.Debugln(len(os.Args))
+			if len(args) < 4 {
+				fmt.Println("Group Name or File Path Missing")
+				log.Fatal("Group/File Missing")
+			} else {
+				groupName := args[2]
+				filePath := args[3]
+				log.Debugln("Opening: ", filePath)
+				if _, err := os.Stat(filePath); os.IsNotExist(err) {
+					fmt.Println("File does not exist")
+					log.Fatal("File does not exist")
+				} else {
+					file, err := os.OpenFile(filePath, os.O_RDONLY, 0666)
+					if err != nil {
+						log.Fatal("Error opening TDMS File")
+					}
+					displayTDMSGroupChannels(file, groupName)
 					file.Close()
 				}
 			}
@@ -195,11 +216,111 @@ func initLogging(debug bool) {
 	})
 }
 
-func displayTDMSGroups(file *os.File, offset int64, whence int) {
+func displayTDMSGroups(file *os.File) {
+
+	segments := readAllTDMSSegments(file)
+
+	paths := readAllUniqueTDMSObjects(segments)
+
+	groups := getGroupsFromPathArray(paths)
+
+	for _, group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		fmt.Println(formatted)
+	}
+}
+
+func displayTDMSGroupChannels(file *os.File, groupName string) {
+	segments := readAllTDMSSegments(file)
+
+	paths := readAllUniqueTDMSObjects(segments)
+	
+	groups := getGroupsFromPathArray(paths)
+
+	groupPresent := false
+	for _,group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == groupName {
+			groupPresent = true
+			log.Debugf("Found matching Group")
+		}
+	}
+
+	var channels []string
+
+	if groupPresent {
+		channels = getChannelsFromPathArray(paths, groupName)
+	} else {
+		fmt.Println("File does not contain group named: ", groupName)
+		log.Fatal("Invalid Group Name")
+	}
+
+	for _, channel := range channels {
+		formatted := strings.Replace(channel, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		fmt.Println(formatted)
+	}
+}
+
+func getGroupsFromPathArray(paths []string) []string {
+	var groups []string
+	for _, path := range paths {
+		if (path != "/") && (len(strings.Split(path, "/")) == 2) {
+			groups = append(groups, path)
+		}
+	}
+	return groups
+}
+
+func readAllUniqueTDMSObjects(segments []Segment) []string {
+	// Get All Objets from each Segments
+	// Remove all duplicates
+	// Remove "/"
+	// Remove "/<string>/<string>"
+	// Effectively using a map as a set
+	paths := make(map[string]bool)
+	for _, seg := range segments {
+		for path := range seg.objects {
+			exists := paths[path]
+			if !(exists) {
+				paths[path] = true
+			}
+		}
+	}
+
+	var uniqueStrings []string
+	for path, val := range paths {
+		if val {
+			uniqueStrings = append(uniqueStrings, path)
+		}
+	}
+	return uniqueStrings
+}
+
+func getChannelsFromPathArray(paths []string, group string) []string {
+	var channels []string
+	for _, path := range paths {
+		splitString := strings.Split(path, "/")
+		if (path != "/") && (len(splitString) == 3) && splitString[1] == ("'" + group + "'") {
+			channels = append(channels, splitString[2])
+		}
+	}
+	return channels
+}
+
+// Get All Segments of TDMS File
+func readAllTDMSSegments(file *os.File) []Segment {
 	// Get File Size
 	fi, err := file.Stat()
 	if err != nil {
 		log.Fatal("Could not Obtain File Stats: ", err)
+	}
+
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in readAllTDMSSegments: ", err)
 	}
 
 	// Init Variables
@@ -227,40 +348,11 @@ func displayTDMSGroups(file *os.File, offset int64, whence int) {
 		if segmentPos >= uint64(fi.Size()) {
 			break
 		}
-
 	}
 
-	// Get Groups
-	// Get All Objets from each Segments
-	// Remove all duplicates
-	// Remove "/"
-	// Remove "/<string>/<string>"
-	// Effectively using a map as a set
-	paths := make(map[string]bool)
-	for _, seg := range segments {
-		for path := range seg.objects {
-			exists := paths[path]
-			if !(exists) {
-				paths[path] = true
-			}
-		}
-	}
+	log.Debugln("Finished Reading TDMS Segments")
 
-	var groups []string
-	for path := range paths {
-		if (path != "/") && (len(strings.Split(path, "/")) == 2) {
-			groups = append(groups, path)
-			formatted := strings.Replace(path, "/", "", -1)
-			formatted = strings.Replace(formatted, "'", "", -1)
-			fmt.Println(formatted)
-		}
-	}
-
-	log.Debugln(groups)
-	
-
-	log.Debugf("Finished Reading TDMS\n")
-
+	return segments
 }
 
 // Reads a TDMS Segment
@@ -322,7 +414,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 		leadIn.nextSegPos,
 		leadIn.dataPos,
 		0, //TODO: Implement
-		index, 
+		index,
 	}
 }
 
@@ -584,7 +676,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 						0,
 						0,
 						0,
-					},	
+					},
 				}
 			}
 		}
