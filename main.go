@@ -337,6 +337,7 @@ func displayTDMSChannelProperties(file *os.File, groupName string, channelName s
 		for _, val := range segments {
 			fmt.Println()
 			fmt.Println(val)
+			// objPath := "'/" + groupName + "'/'" + channelName + "'"
 		}
 	}
 
