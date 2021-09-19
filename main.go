@@ -8,10 +8,10 @@ import (
 	"io"
 	"math"
 	"os"
-	"strings"
-	"time"
 	"sort"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -46,14 +46,14 @@ type Segment struct {
 	dataPos                  uint64
 	finalChunkLengthOverride uint64
 	objectIndex              uint64
-	propMap									 map[string]map[string]Property
+	propMap                  map[string]map[string]Property
 }
 
 type Property struct {
-	name        string
-	dataType    tdsDataType
-	valuePosition    int64
-	stringValue string
+	name          string
+	dataType      tdsDataType
+	valuePosition int64
+	stringValue   string
 }
 
 type Properties []Property
@@ -313,16 +313,16 @@ func displayTDMSFile(file *os.File) {
 				}
 			}
 			sort.Sort(properties)
+			writer := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', tabwriter.AlignRight)
 			for _, val := range properties {
-				fmt.Printf("\t\t%s --> %s\n", val.name, val.stringValue)
+				fmt.Fprintf(writer, "\t\t%s\t %s\n", val.name, val.stringValue)
 			}
+			writer.Flush()
 			fmt.Println()
 		}
 	}
-	
 
 	// Easiest to Iterate and Print Simulatenously
-
 
 }
 
@@ -718,7 +718,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	// Initialize Empty Map for Objects
 	// TODO: Change to a Slice with a Map for Lookup
 	objMap := make(map[string]SegmentObject)
-	
+
 	// Init Map of Property Maps
 	propertyMap := make(map[string]map[string]Property)
 
@@ -865,23 +865,23 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 			// if propMap, present := propertyMap[objPath]; present {
 			if _, present := propertyMap[objPath]; present {
 				// Property Maps Exists for Path
-				propertyMap[objPath][property.name] = property	
+				propertyMap[objPath][property.name] = property
 				// if _, present := propMap[property.name]; present {
 				// 	// Property Exists in Property Map
 				// 	// Update it
 				// 	// MAYBE NOT NECESSARY?
-				// 	propertyMap[objPath][property.name] = property	
+				// 	propertyMap[objPath][property.name] = property
 				// } else {
-				// 	propertyMap[objPath][property.name] = property	
-				// } 
+				// 	propertyMap[objPath][property.name] = property
+				// }
 			} else {
 				// Property Map Doesn't exist for Path yet
 				initMap := map[string]Property{
 					property.name: {
-					property.name,
-					property.dataType,
-					property.valuePosition,
-					property.stringValue,
+						property.name,
+						property.dataType,
+						property.valuePosition,
+						property.stringValue,
 					},
 				}
 				propertyMap[objPath] = initMap
@@ -918,7 +918,7 @@ func readTDMSProperty(file *os.File, offset int64, whence int) Property {
 	propertyTdsDataType := tdsDataType(propertyDataType)
 
 	// Position for reading later
-	valuePosition,_ := file.Seek(0, 1)
+	valuePosition, _ := file.Seek(0, 1)
 
 	// Property Value coerced to String
 	var valueString string
