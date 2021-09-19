@@ -289,17 +289,40 @@ func displayTDMSFile(file *os.File) {
 
 	groups := getGroupsFromPathArray(paths)
 
-	for _, group := range groups {
+	writer := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', tabwriter.AlignRight)
+
+	for groupIter, group := range groups {
 		// GROUPS
 		formattedG := strings.Replace(group, "/", "", -1)
 		formattedG = strings.Replace(formattedG, "'", "", -1)
-		fmt.Println(formattedG)
 
-		for _, channel := range getChannelsFromPathArray(paths, formattedG) {
+		if groupIter == len(groups)-1 {
+			fmt.Fprintf(writer, "└── %s\n", formattedG)
+		} else {
+			fmt.Fprintf(writer, "├── %s\n", formattedG)
+		}
+
+		channels := getChannelsFromPathArray(paths, formattedG)
+
+		for chanIter, channel := range channels {
 			// CHANNELS
 			formattedC := strings.Replace(channel, "/", "", -1)
 			formattedC = strings.Replace(formattedC, "'", "", -1)
-			fmt.Printf("\t%s\n", formattedC)
+
+			var chFormatString strings.Builder
+
+			if groupIter != len(groups)-1 {
+				chFormatString.WriteString("|")
+			}
+			chFormatString.WriteString("\t")
+			if chanIter == len(channels)-1 {
+				chFormatString.WriteString("└──")
+			} else {
+				chFormatString.WriteString("├──")
+			}
+			chFormatString.WriteString(" %s\n")
+
+			fmt.Fprintf(writer, chFormatString.String(), formattedC)
 
 			var properties Properties
 			for _, val := range segments {
@@ -312,18 +335,33 @@ func displayTDMSFile(file *os.File) {
 					}
 				}
 			}
+
 			sort.Sort(properties)
-			writer := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', tabwriter.AlignRight)
-			for _, val := range properties {
-				fmt.Fprintf(writer, "\t\t%s\t %s\n", val.name, val.stringValue)
+
+			for propIter, val := range properties {
+
+				var propFormatString strings.Builder
+
+				if groupIter != len(groups)-1 {
+					propFormatString.WriteString("|")
+				}
+				propFormatString.WriteString("\t")
+				if chanIter != len(channels)-1 {
+					propFormatString.WriteString("|")
+				}
+				propFormatString.WriteString("\t")
+				if propIter == len(properties)-1 {
+					propFormatString.WriteString("└──")
+				} else {
+					propFormatString.WriteString("├──")
+				}
+				propFormatString.WriteString(" %s\t%s\n")
+
+				fmt.Fprintf(writer, propFormatString.String(), val.name, val.stringValue)
 			}
-			writer.Flush()
-			fmt.Println()
 		}
 	}
-
-	// Easiest to Iterate and Print Simulatenously
-
+	writer.Flush()
 }
 
 func displayTDMSGroups(file *os.File) {
