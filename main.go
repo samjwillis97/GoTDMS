@@ -44,6 +44,14 @@ type Segment struct {
 	dataPos                  uint64
 	finalChunkLengthOverride uint64
 	objectIndex              uint64
+	propMap									 map[string]map[string]Property
+}
+
+type Property struct {
+	name        string
+	dataType    tdsDataType
+	valuePosition    int64
+	stringValue string
 }
 
 type tdsDataType uint64
@@ -133,6 +141,7 @@ func main() {
 				} else {
 					file, err := os.OpenFile(filePath, os.O_RDONLY, 0666)
 					if err != nil {
+						fmt.Println("Error Opening TDMS File")
 						log.Fatal("Error opening TDMS File")
 					}
 					displayTDMSGroups(file)
@@ -142,7 +151,7 @@ func main() {
 		case "channels":
 			log.Debugln(len(os.Args))
 			if len(args) < 4 {
-				fmt.Println("Group Name or File Path Missing")
+				fmt.Println("Not Enough Arguments Supplied, expected 2")
 				log.Fatal("Group/File Missing")
 			} else {
 				groupName := args[2]
@@ -154,9 +163,33 @@ func main() {
 				} else {
 					file, err := os.OpenFile(filePath, os.O_RDONLY, 0666)
 					if err != nil {
+						fmt.Println("Error Opening TDMS File")
 						log.Fatal("Error opening TDMS File")
 					}
 					displayTDMSGroupChannels(file, groupName)
+					file.Close()
+				}
+			}
+		case "properties":
+			// Have a switch for Channel or Group properties
+			if len(args) < 5 {
+				fmt.Println("Not Enough Arguments Supplied, expected 3")
+				log.Fatal("Group/Channel/File Missing")
+			} else {
+				groupName := args[2]
+				channelName := args[3]
+				filePath := args[4]
+				log.Debugln("Opening: ", filePath)
+				if _, err := os.Stat(filePath); os.IsNotExist(err) {
+					fmt.Println("File does not exist")
+					log.Fatal("File does not exist")
+				} else {
+					file, err := os.OpenFile(filePath, os.O_RDONLY, 0666)
+					if err != nil {
+						fmt.Println("Error Opening TDMS File")
+						log.Fatal("Error opening TDMS File")
+					}
+					displayTDMSChannelProperties(file, groupName, channelName)
 					file.Close()
 				}
 			}
@@ -217,7 +250,6 @@ func initLogging(debug bool) {
 }
 
 func displayTDMSGroups(file *os.File) {
-
 	segments := readAllTDMSSegments(file)
 
 	paths := readAllUniqueTDMSObjects(segments)
@@ -235,11 +267,11 @@ func displayTDMSGroupChannels(file *os.File, groupName string) {
 	segments := readAllTDMSSegments(file)
 
 	paths := readAllUniqueTDMSObjects(segments)
-	
+
 	groups := getGroupsFromPathArray(paths)
 
 	groupPresent := false
-	for _,group := range groups {
+	for _, group := range groups {
 		formatted := strings.Replace(group, "/", "", -1)
 		formatted = strings.Replace(formatted, "'", "", -1)
 		if formatted == groupName {
@@ -262,6 +294,51 @@ func displayTDMSGroupChannels(file *os.File, groupName string) {
 		formatted = strings.Replace(formatted, "'", "", -1)
 		fmt.Println(formatted)
 	}
+}
+
+func displayTDMSChannelProperties(file *os.File, groupName string, channelName string) {
+	segments := readAllTDMSSegments(file)
+
+	paths := readAllUniqueTDMSObjects(segments)
+
+	groups := getGroupsFromPathArray(paths)
+
+	groupPresent := false
+	for _, group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == groupName {
+			groupPresent = true
+			log.Debugf("Found matching Group")
+		}
+	}
+
+	var channels []string
+
+	if groupPresent {
+		channels = getChannelsFromPathArray(paths, groupName)
+	} else {
+		fmt.Println("File does not contain group named: ", groupName)
+		log.Fatal("Invalid Group Name")
+	}
+
+	channelPresent := false
+	for _, channel := range channels {
+		formatted := strings.Replace(channel, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == channelName {
+			channelPresent = true
+			log.Debugf("Found matching channel")
+		}
+	}
+
+	if channelPresent {
+		for _, val := range segments {
+			fmt.Println()
+			fmt.Println(val)
+		}
+	}
+
 }
 
 func getGroupsFromPathArray(paths []string) []string {
@@ -303,7 +380,7 @@ func getChannelsFromPathArray(paths []string, group string) []string {
 	var channels []string
 	for _, path := range paths {
 		splitString := strings.Split(path, "/")
-		if (path != "/") && (len(splitString) == 3) && splitString[1] == ("'" + group + "'") {
+		if (path != "/") && (len(splitString) == 3) && splitString[1] == ("'"+group+"'") {
 			channels = append(channels, splitString[2])
 		}
 	}
@@ -338,6 +415,7 @@ func readAllTDMSSegments(file *os.File) []Segment {
 			0,
 			0,
 			0,
+			map[string]map[string]Property{},
 		}
 		newSegment := readTDMSSegment(file, int64(segmentPos), 0, prevSegment)
 
@@ -375,7 +453,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 	leadIn := readTDMSLeadIn(file, 0, 1)
 
 	// Read TDMS Meta Data
-	objMap := readTDMSMetaData(file, 0, 1, leadIn, prevSegment)
+	objMap, propMap := readTDMSMetaData(file, 0, 1, leadIn, prevSegment)
 
 	// Calculate Number of Chunks
 	numChunks := calculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
@@ -415,6 +493,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 		leadIn.dataPos,
 		0, //TODO: Implement
 		index,
+		propMap,
 	}
 }
 
@@ -539,7 +618,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) map[string]SegmentObject {
+func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) (map[string]SegmentObject, map[string]map[string]Property) {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -548,11 +627,14 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	// Initialize Empty Map for Objects
 	// TODO: Change to a Slice with a Map for Lookup
 	objMap := make(map[string]SegmentObject)
+	
+	// Init Map of Property Maps
+	propertyMap := make(map[string]map[string]Property)
 
 	// True if no MetaData
 	if (kTocMetaData & leadin.ToCMask) != kTocMetaData {
 		log.Debugln("Reuse Previous Segment Metadata")
-		return prevSegment.objects
+		return prevSegment.objects, prevSegment.propMap
 	}
 
 	// TODO: Big Endianness with TocMask
@@ -688,16 +770,49 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		// Read Properties
 		for j := uint32(0); j < numProperties; j++ {
 			log.Debugf("Reading Object %d Property %d\n", i, j)
-			readTDMSProperty(file, 0, 1)
+			property := readTDMSProperty(file, 0, 1)
+			// if propMap, present := propertyMap[objPath]; present {
+			if _, present := propertyMap[objPath]; present {
+				// Property Maps Exists for Path
+				propertyMap[objPath][property.name] = property	
+				// if _, present := propMap[property.name]; present {
+				// 	// Property Exists in Property Map
+				// 	// Update it
+				// 	// MAYBE NOT NECESSARY?
+				// 	propertyMap[objPath][property.name] = property	
+				// } else {
+				// 	propertyMap[objPath][property.name] = property	
+				// } 
+			} else {
+				// Property Map Doesn't exist for Path yet
+				initMap := map[string]Property{
+					property.name: {
+					property.name,
+					property.dataType,
+					property.valuePosition,
+					property.stringValue,
+					},
+				}
+				propertyMap[objPath] = initMap
+			}
 		}
 	}
-	return objMap
+
+	//TODO: REMOVE
+	// fmt.Println()
+	// fmt.Println("MAP")
+	// fmt.Println(objMap)
+	// fmt.Println()
+	// fmt.Println("PROPERTIES")
+	// fmt.Println(propertyMap)
+
+	return objMap, propertyMap
 }
 
 // Read the Properties for a TDMS Object
 // TODO
 // Change this to output a list of properties
-func readTDMSProperty(file *os.File, offset int64, whence int) {
+func readTDMSProperty(file *os.File, offset int64, whence int) Property {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -705,35 +820,42 @@ func readTDMSProperty(file *os.File, offset int64, whence int) {
 
 	// Property Name
 	propertyName := stringFromTDMS(file, 0, 1)
-	log.Debugf("Property Name: %s\n", propertyName)
+	// log.Debugf("Property Name: %s\n", propertyName)
 
 	// Debuged in Hex
 	propertyDataType := uint32FromTDMS(file, 0, 1)
 	propertyTdsDataType := tdsDataType(propertyDataType)
+
+	// Position for reading later
+	valuePosition,_ := file.Seek(0, 1)
+
+	// Property Value coerced to String
+	var valueString string
+
 	// TODO
 	// Finish This
 	switch propertyTdsDataType {
 	default:
 		log.Fatal("Property Data Type Unkown")
 	case String:
-		stringValue := stringFromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %s\n", stringValue)
+		valueString = stringFromTDMS(file, 0, 1)
 	case Int32:
-		int32Value := int32FromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %d\n", int32Value)
+		valueString = fmt.Sprintf("%d", int32FromTDMS(file, 0, 1))
 	case Uint32:
-		uint32Value := uint32FromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %d\n", uint32Value)
+		valueString = fmt.Sprintf("%d", uint32FromTDMS(file, 0, 1))
 	case Uint64:
-		uint64Value := uint64FromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %d\n", uint64Value)
+		valueString = fmt.Sprintf("%d", uint64FromTDMS(file, 0, 1))
 	case DBL:
-		DBLValue := DBLFromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %.6f\n", DBLValue)
+		valueString = fmt.Sprintf("%.4f", DBLFromTDMS(file, 0, 1))
 	case Timestamp:
-		log.Debugf("Timestamp Property In Testing\n")
-		timestampValue := timeFromTDMS(file, 0, 1)
-		log.Debugf("Property Value: %s\n", timestampValue.String())
+		valueString = timeFromTDMS(file, 0, 1).String()
+	}
+
+	return Property{
+		propertyName,
+		propertyTdsDataType,
+		valuePosition,
+		valueString,
 	}
 }
 
