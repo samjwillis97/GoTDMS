@@ -332,6 +332,7 @@ func displayTDMSChannelProperties(file *os.File, groupName string, channelName s
 		}
 	}
 
+	// Get All Property Maps from segmetns containing a match, keep overriding to keep last
 	if channelPresent {
 		for _, val := range segments {
 			fmt.Println()
