@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+	"sort"
+	"text/tabwriter"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -54,6 +56,8 @@ type Property struct {
 	stringValue string
 }
 
+type Properties []Property
+
 type tdsDataType uint64
 
 const (
@@ -96,12 +100,14 @@ var (
 	daqmxDigitalLineScaler    = []byte{69, 13, 00, 00}
 )
 
-const version string = "0.0.0.0"
+const version string = "0.0.1.0"
 
 func main() {
 	var debug bool
 	var help bool
 	var json bool
+
+	//TODO: Implement JSON Outputs
 
 	flag.BoolVar(&json, "json", false, "Output in JSON Format")
 	flag.BoolVar(&debug, "d", false, "Output Debug Log")
@@ -195,7 +201,8 @@ func main() {
 			}
 		default:
 			fmt.Println("Unkown Object to List")
-			printHelp()
+			fmt.Println()
+			printListHelp()
 		}
 	default:
 		fmt.Println("Unkown Command")
@@ -223,6 +230,16 @@ func printHelp() {
 	fmt.Println("  --help, -h")
 	fmt.Println("  --json")
 	fmt.Println("  --version, -v")
+}
+
+func printListHelp() {
+	fmt.Println("USAGE:")
+	fmt.Println("  GoTDMS [global options] list subcommand [options] [arguments...]")
+	fmt.Println()
+	fmt.Println("SUBCOMMANDS:")
+	fmt.Println("  groups")
+	fmt.Println("  channels")
+	fmt.Println("  properties")
 }
 
 func initLogging(debug bool) {
@@ -332,15 +349,27 @@ func displayTDMSChannelProperties(file *os.File, groupName string, channelName s
 		}
 	}
 
+	var properties Properties
 	// Get All Property Maps from segmetns containing a match, keep overriding to keep last
 	if channelPresent {
 		for _, val := range segments {
-			fmt.Println()
-			fmt.Println(val)
-			// objPath := "'/" + groupName + "'/'" + channelName + "'"
+			for path, propMap := range val.propMap {
+				if path == ("/'" + groupName + "'/'" + channelName + "'") {
+					for _, propValue := range propMap {
+						properties = append(properties, propValue)
+					}
+				}
+			}
 		}
 	}
 
+	sort.Sort(properties)
+
+	writer := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', tabwriter.AlignRight)
+	for _, val := range properties {
+		fmt.Fprintf(writer, "%s\t%s\n", val.name, val.stringValue)
+	}
+	writer.Flush()
 }
 
 func getGroupsFromPathArray(paths []string) []string {
@@ -848,7 +877,7 @@ func readTDMSProperty(file *os.File, offset int64, whence int) Property {
 	case Uint64:
 		valueString = fmt.Sprintf("%d", uint64FromTDMS(file, 0, 1))
 	case DBL:
-		valueString = fmt.Sprintf("%.4f", DBLFromTDMS(file, 0, 1))
+		valueString = fmt.Sprintf("%e", DBLFromTDMS(file, 0, 1))
 	case Timestamp:
 		valueString = timeFromTDMS(file, 0, 1).String()
 	}
@@ -1042,7 +1071,6 @@ func uint32ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) 
 		endBit := startBit + size
 		val := binary.LittleEndian.Uint32(intByteArray[startBit:endBit])
 		vals = append(vals, val)
-		// log.Debugf("Value %d: %d\n", i, val)
 	}
 
 	return vals
@@ -1175,4 +1203,20 @@ func averageFloat64Slice(y []float64) (avg float64) {
 	}
 
 	return avg / float64(len(y))
+}
+
+// Sorting for Properties
+func (p Properties) Len() int { return len(p) }
+
+func (p Properties) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
+func (p Properties) Less(i, j int) bool {
+	var si string = p[i].name
+	var sj string = p[j].name
+	var si_low = strings.ToLower(si)
+	var sj_low = strings.ToLower(sj)
+	if si_low == sj_low {
+		return si < sj
+	}
+	return si_low < sj_low
 }
