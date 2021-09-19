@@ -200,9 +200,23 @@ func main() {
 				}
 			}
 		default:
-			fmt.Println("Unkown Object to List")
-			fmt.Println()
-			printListHelp()
+			if len(args) < 2 {
+				fmt.Println("Unkown Object to List")
+				fmt.Println()
+				printListHelp()
+			} else if _, err := os.Stat(args[1]); os.IsNotExist(err) {
+				fmt.Println("Unkown Object to List")
+				fmt.Println()
+				printListHelp()
+			} else {
+				file, err := os.OpenFile(args[1], os.O_RDONLY, 0666)
+				if err != nil {
+					fmt.Println("Error Opening TDMS File")
+					log.Fatal("Error opening TDMS File")
+				}
+				displayTDMSFile(file)
+				file.Close()
+			}
 		}
 	default:
 		fmt.Println("Unkown Command")
@@ -264,6 +278,52 @@ func initLogging(debug bool) {
 		DisableColors: true,
 		FullTimestamp: true,
 	})
+}
+
+func displayTDMSFile(file *os.File) {
+	// Get All Segments, Find all Non Duplicates
+	// Get Each Group, Each Channel and All Properties
+	segments := readAllTDMSSegments(file)
+
+	paths := readAllUniqueTDMSObjects(segments)
+
+	groups := getGroupsFromPathArray(paths)
+
+	for _, group := range groups {
+		// GROUPS
+		formattedG := strings.Replace(group, "/", "", -1)
+		formattedG = strings.Replace(formattedG, "'", "", -1)
+		fmt.Println(formattedG)
+
+		for _, channel := range getChannelsFromPathArray(paths, formattedG) {
+			// CHANNELS
+			formattedC := strings.Replace(channel, "/", "", -1)
+			formattedC = strings.Replace(formattedC, "'", "", -1)
+			fmt.Printf("\t%s\n", formattedC)
+
+			var properties Properties
+			for _, val := range segments {
+				//PROPERTIES
+				for path, propMap := range val.propMap {
+					if path == ("/'" + formattedG + "'/'" + formattedC + "'") {
+						for _, propValue := range propMap {
+							properties = append(properties, propValue)
+						}
+					}
+				}
+			}
+			sort.Sort(properties)
+			for _, val := range properties {
+				fmt.Printf("\t\t%s --> %s\n", val.name, val.stringValue)
+			}
+			fmt.Println()
+		}
+	}
+	
+
+	// Easiest to Iterate and Print Simulatenously
+
+
 }
 
 func displayTDMSGroups(file *os.File) {
