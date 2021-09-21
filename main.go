@@ -41,6 +41,7 @@ type Segment struct {
 	position                 uint64
 	numChunks                uint64
 	objects                  map[string]SegmentObject
+	objectOrder							 []string
 	kToCMask                 uint32
 	nextSegPos               uint64
 	dataPos                  uint64
@@ -486,23 +487,19 @@ func readAllUniqueTDMSObjects(segments []Segment) []string {
 	// Remove "/"
 	// Remove "/<string>/<string>"
 	// Effectively using a map as a set
-	paths := make(map[string]bool)
+	pathSet := make(map[string]bool)
+	pathArray := make([]string, 0)
 	for _, seg := range segments {
-		for path := range seg.objects {
-			exists := paths[path]
+		for _, path := range seg.objectOrder {
+			exists := pathSet[path]
 			if !(exists) {
-				paths[path] = true
+				pathSet[path] = true
+				pathArray = append(pathArray, path)
 			}
 		}
 	}
 
-	var uniqueStrings []string
-	for path, val := range paths {
-		if val {
-			uniqueStrings = append(uniqueStrings, path)
-		}
-	}
-	return uniqueStrings
+	return pathArray
 }
 
 func getChannelsFromPathArray(paths []string, group string) []string {
@@ -539,6 +536,7 @@ func readAllTDMSSegments(file *os.File) []Segment {
 			0,
 			0,
 			map[string]SegmentObject{},
+			[]string{},
 			0,
 			0,
 			0,
@@ -582,7 +580,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 	leadIn := readTDMSLeadIn(file, 0, 1)
 
 	// Read TDMS Meta Data
-	objMap, propMap := readTDMSMetaData(file, 0, 1, leadIn, prevSegment)
+	objMap, objOrder, propMap := readTDMSMetaData(file, 0, 1, leadIn, prevSegment)
 
 	// Calculate Number of Chunks
 	numChunks := calculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
@@ -617,6 +615,7 @@ func readTDMSSegment(file *os.File, offset int64, whence int, prevSegment Segmen
 		uint64(startPos),
 		numChunks,
 		objMap,
+		objOrder,
 		leadIn.ToCMask,
 		leadIn.nextSegPos,
 		leadIn.dataPos,
@@ -747,7 +746,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 // 0 = Beginning of File
 // 1 = Current Position
 // 2 = End of File
-func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) (map[string]SegmentObject, map[string]map[string]Property) {
+func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment) (map[string]SegmentObject, []string, map[string]map[string]Property) {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -756,6 +755,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	// Initialize Empty Map for Objects
 	// TODO: Change to a Slice with a Map for Lookup
 	objMap := make(map[string]SegmentObject)
+	objOrder := make([]string, 0)
 
 	// Init Map of Property Maps
 	propertyMap := make(map[string]map[string]Property)
@@ -763,7 +763,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	// True if no MetaData
 	if (kTocMetaData & leadin.ToCMask) != kTocMetaData {
 		log.Debugln("Reuse Previous Segment Metadata")
-		return prevSegment.objects, prevSegment.propMap
+		return prevSegment.objects, prevSegment.objectOrder, prevSegment.propMap
 	}
 
 	// TODO: Big Endianness with TocMask
@@ -775,6 +775,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		// There can be a list of new objects that are appended,
 		// or previous objects that are repeated with changed properties
 		objMap = prevSegment.objects
+		objOrder = prevSegment.objectOrder
 	}
 
 	log.Debugln("READING METADATA")
@@ -846,9 +847,11 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 						rawDataIndexHeaderBytes,
 						val.rawDataIndex,
 					}
+					objOrder = append(objOrder, objPath)
 				} else {
 					// Copy Completely
 					objMap[objPath] = val
+					objOrder = append(objOrder, objPath)
 				}
 				// Matches Previous
 			} else if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
@@ -879,6 +882,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 					rawDataIndexHeaderBytes,
 					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
+				objOrder = append(objOrder, objPath)
 			} else {
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
@@ -889,6 +893,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 						0,
 					},
 				}
+				objOrder = append(objOrder, objPath)
 			}
 		}
 
@@ -935,7 +940,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	// fmt.Println("PROPERTIES")
 	// fmt.Println(propertyMap)
 
-	return objMap, propertyMap
+	return objMap, objOrder, propertyMap
 }
 
 // Read the Properties for a TDMS Object
