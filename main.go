@@ -101,12 +101,14 @@ var (
 	daqmxDigitalLineScaler    = []byte{69, 13, 00, 00}
 )
 
-const version string = "0.0.1.0"
+const versionString string = "0.0.1.0"
 
 func main() {
 	var debug bool
 	var help bool
 	var json bool
+	var verbose bool
+	var version bool
 
 	//TODO: Implement JSON Outputs
 
@@ -115,10 +117,16 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "Output Debug Log")
 	flag.BoolVar(&help, "h", false, "Help")
 	flag.BoolVar(&help, "help", false, "Help")
+	flag.BoolVar(&verbose, "v", false, "Verbose")
+	flag.BoolVar(&verbose, "verbose", false, "Verbose")
+	flag.BoolVar(&version, "version", false, "Version")
 	flag.Parse()
 
 	if help {
 		printHelp()
+		os.Exit(0)
+	} else if version {
+		printVersion()
 		os.Exit(0)
 	}
 
@@ -201,6 +209,7 @@ func main() {
 				}
 			}
 		default:
+
 			if len(args) < 2 {
 				fmt.Println("Unkown Object to List")
 				fmt.Println()
@@ -215,7 +224,7 @@ func main() {
 					fmt.Println("Error Opening TDMS File")
 					log.Fatal("Error opening TDMS File")
 				}
-				displayTDMSFile(file)
+				displayTDMSFile(file, verbose)
 				file.Close()
 			}
 		}
@@ -223,6 +232,10 @@ func main() {
 		fmt.Println("Unkown Command")
 		printHelp()
 	}
+}
+
+func printVersion() {
+	fmt.Println("Version: ", versionString)
 }
 
 func printHelp() {
@@ -234,7 +247,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("VERSION:")
 	fmt.Print("  ")
-	fmt.Println(version)
+	fmt.Println(versionString)
 	fmt.Println()
 	fmt.Println("COMMANDS:")
 	fmt.Println("    help")
@@ -244,7 +257,8 @@ func printHelp() {
 	fmt.Println("  --debug, -d")
 	fmt.Println("  --help, -h")
 	fmt.Println("  --json")
-	fmt.Println("  --version, -v")
+	fmt.Println("  --verbose, -v")
+	fmt.Println("  --version")
 }
 
 func printListHelp() {
@@ -281,7 +295,7 @@ func initLogging(debug bool) {
 	})
 }
 
-func displayTDMSFile(file *os.File) {
+func displayTDMSFile(file *os.File, verbose bool) {
 	// Get All Segments, Find all Non Duplicates
 	// Get Each Group, Each Channel and All Properties
 	segments := readAllTDMSSegments(file)
@@ -338,27 +352,28 @@ func displayTDMSFile(file *os.File) {
 			}
 
 			sort.Sort(properties)
+			if verbose {
+				for propIter, val := range properties {
 
-			for propIter, val := range properties {
+					var propFormatString strings.Builder
 
-				var propFormatString strings.Builder
+					if groupIter != len(groups)-1 {
+						propFormatString.WriteString("|")
+					}
+					propFormatString.WriteString("\t")
+					if chanIter != len(channels)-1 {
+						propFormatString.WriteString("|")
+					}
+					propFormatString.WriteString("\t")
+					if propIter == len(properties)-1 {
+						propFormatString.WriteString("└──")
+					} else {
+						propFormatString.WriteString("├──")
+					}
+					propFormatString.WriteString(" %s\t%s\n")
 
-				if groupIter != len(groups)-1 {
-					propFormatString.WriteString("|")
+					fmt.Fprintf(writer, propFormatString.String(), val.name, val.stringValue)
 				}
-				propFormatString.WriteString("\t")
-				if chanIter != len(channels)-1 {
-					propFormatString.WriteString("|")
-				}
-				propFormatString.WriteString("\t")
-				if propIter == len(properties)-1 {
-					propFormatString.WriteString("└──")
-				} else {
-					propFormatString.WriteString("├──")
-				}
-				propFormatString.WriteString(" %s\t%s\n")
-
-				fmt.Fprintf(writer, propFormatString.String(), val.name, val.stringValue)
 			}
 		}
 	}
