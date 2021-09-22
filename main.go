@@ -529,8 +529,7 @@ func readAllTDMSSegments(file *os.File) []Segment {
 	// Init Variables
 	var segments []Segment
 	segmentPos := uint64(0)
-
-	var allPrevSegObjs map[string]SegmentObject
+	allPrevSegObjs := make(map[string]SegmentObject)
 
 	prevSegment := Segment{
 		0,
@@ -553,13 +552,6 @@ func readAllTDMSSegments(file *os.File) []Segment {
 		prevSegment = newSegment
 		segmentPos = newSegment.nextSegPos
 
-		// TODO: Combine Previous Segments Rather than Replace
-		// Need to keep a map[string]
-		//	dataSize
-		//  numebrValues
-		//  path
-		// Pass this to readTDMSSegment as well as prevSegment
-		// This one will be used when it already exists
 		for path, val := range newSegment.objects {
 			allPrevSegObjs[path] = val
 		}
@@ -569,7 +561,6 @@ func readAllTDMSSegments(file *os.File) []Segment {
 		}
 	}
 
-	log.Debugln(allPrevSegObjs)
 	log.Debugln("Finished Reading TDMS Segments")
 
 	return segments
@@ -850,7 +841,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
 			}
-		} else if val, present := prevSegment.objects[objPath]; present {
+		} else if val, present := allPrevSegObjs[objPath]; present {
 			log.Debugf("Reusing Previous %s Object\n", objPath)
 			// reuse previous object
 			if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) == 0 {
