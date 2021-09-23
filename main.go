@@ -454,7 +454,7 @@ func displayChannelData(file *os.File, groupName string, channelName string) {
 
 	if channelPresent {
 		fullPath := groupString + "/" + channelString
-		readChannelRawData(file, fullPath, segments)
+		readChannelRawData(file, fullPath, -1, 0, segments)
 	}
 }
 
@@ -959,9 +959,11 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 						rawDataIndexHeaderBytes,
 						val.rawDataIndex,
 					}
+					objOrder = append(objOrder, objPath)
 				} else {
 					// Copy Completely
 					objMap[objPath] = val
+					objOrder = append(objOrder, objPath)
 				}
 			} else {
 				// Changed Metadata in this Section
@@ -969,6 +971,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 					rawDataIndexHeaderBytes,
 					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
+				objOrder = append(objOrder, objPath)
 			}
 		} else {
 			log.Debugf("New Segment Object: %s\n", objPath)
@@ -1024,11 +1027,43 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	return objMap, objOrder, propertyMap
 }
 
-func readChannelRawData(file *os.File, channelPath string, allSegments []Segment) {
+func readChannelRawData(file *os.File, channelPath string, length int64, offset uint64, allSegments []Segment) {
 	// Determine Data Type of Segment
 	// if TWF, defined by the properties
 	// return RMS, P-P, CF for the whole file, add option for Block-by-block, that returns a slice
-	fmt.Println("REMOVE ME: Reading ", channelPath)
+
+	// Iterate through all File Segments
+	for i, segment := range allSegments {
+		// Iterate through all the objects in order
+		// Skipping over the data we don't need to read
+		_, err := file.Seek(int64(segment.dataPos), 0)
+		if err != nil {
+			log.Fatalln("Error from file.Seek in readChannelRawData")
+		}
+
+		for j, objPath := range segment.objectOrder {
+			obj := segment.objects[objPath]
+			_, err := file.Seek(int64(obj.rawDataIndex.rawDataSize), 1)
+			if err != nil {
+				log.Fatalln("Error from file.Seek in readChannelRawData")
+			}
+			if objPath == channelPath {
+				fmt.Printf("Reading Segment: %d, Obj: %d\n", i, j)
+				switch obj.rawDataIndex.dataType {
+				case SGL:
+
+				case DBL:
+					data := DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
+					fmt.Println("Average: ", averageFloat64Slice(data))
+
+				default:
+					log.Fatal("Data Type Not Implemented")
+				}
+			} else {
+			}
+		}
+		// 		data := DBLArrayFromTDMS(file, int64(element.numValues), 0, 1)
+	}
 }
 
 // Read the Properties for a TDMS Object
