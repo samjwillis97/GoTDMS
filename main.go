@@ -774,7 +774,6 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	}
 
 	// Initialize Empty Map for Objects
-	// TODO: Change to a Slice with a Map for Lookup
 	objMap := make(map[string]SegmentObject)
 	objOrder := make([]string, 0)
 
@@ -952,21 +951,10 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 			}
 		}
 	}
-
-	//TODO: REMOVE
-	// fmt.Println()
-	// fmt.Println("MAP")
-	// fmt.Println(objMap)
-	// fmt.Println()
-	// fmt.Println("PROPERTIES")
-	// fmt.Println(propertyMap)
-
 	return objMap, objOrder, propertyMap
 }
 
 // Read the Properties for a TDMS Object
-// TODO
-// Change this to output a list of properties
 func readTDMSProperty(file *os.File, offset int64, whence int) Property {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
@@ -989,6 +977,7 @@ func readTDMSProperty(file *os.File, offset int64, whence int) Property {
 
 	// TODO
 	// Finish This
+	// Converts to Properties
 	switch propertyTdsDataType {
 	default:
 		log.Fatal("Property Data Type Unkown")
