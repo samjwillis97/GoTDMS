@@ -143,7 +143,6 @@ func main() {
 	case "list":
 		switch args[1] {
 		case "groups":
-			log.Debugln(len(os.Args))
 			if len(args) < 3 {
 				fmt.Println("File Path Missing")
 				log.Fatal("File path missing")
@@ -228,6 +227,31 @@ func main() {
 				file.Close()
 			}
 		}
+	case "read":
+		switch args[1] {
+		case "channel":
+			if len(args) < 5 {
+				fmt.Println("Not Enough Arguments Supplied, expected 3")
+				log.Fatal("Group/Channel/File path missing")
+			} else {
+				groupName := args[2]
+				channelName := args[3]
+				filePath := args[4]
+				log.Debugln("Opening: ", filePath)
+				if _, err := os.Stat(filePath); os.IsNotExist(err) {
+					fmt.Println("File does not exist")
+					log.Fatal("File does not exist")
+				} else {
+					file, err := os.OpenFile(filePath, os.O_RDONLY, 0666)
+					if err != nil {
+						fmt.Println("Error Opening TDMS File")
+						log.Fatal("Error opening TDMS File")
+					}
+					displayChannelData(file, groupName, channelName)
+					file.Close()
+				}
+			}
+		}
 	default:
 		fmt.Println("Unkown Command")
 		printHelp()
@@ -269,6 +293,14 @@ func printListHelp() {
 	fmt.Println("  groups")
 	fmt.Println("  channels")
 	fmt.Println("  properties")
+}
+
+func printReadHelp() {
+	fmt.Println("USAGE:")
+	fmt.Println("  GoTDMS [global options] read subcommand [options] [arguments...]")
+	fmt.Println()
+	fmt.Println("SUBCOMMANDS:")
+	fmt.Println("  channel")
 }
 
 func initLogging(debug bool) {
@@ -378,6 +410,52 @@ func displayTDMSFile(file *os.File, verbose bool) {
 		}
 	}
 	writer.Flush()
+}
+
+func displayChannelData(file *os.File, groupName string, channelName string) {
+	segments := readAllTDMSSegments(file)
+
+	paths := readAllUniqueTDMSObjects(segments)
+
+	groups := getGroupsFromPathArray(paths)
+
+	groupPresent := false
+	var groupString string
+	for _, group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == groupName {
+			groupPresent = true
+			groupString = group
+			log.Debugf("Found matching Group")
+		}
+	}
+
+	var channels []string
+	var channelString string
+
+	if groupPresent {
+		channels = getChannelsFromPathArray(paths, groupName)
+	} else {
+		fmt.Println("File does not contain group named: ", groupName)
+		log.Fatal("Invalid Group Name")
+	}
+
+	channelPresent := false
+	for _, channel := range channels {
+		formatted := strings.Replace(channel, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == channelName {
+			channelPresent = true
+			channelString = channel
+			log.Debugf("Found matching channel")
+		}
+	}
+
+	if channelPresent {
+		fullPath := groupString + "/" + channelString
+		readChannelRawData(file, fullPath, segments)
+	}
 }
 
 func displayTDMSGroups(file *os.File) {
@@ -497,7 +575,7 @@ func getGroupsFromPathArray(paths []string) []string {
 }
 
 func readAllUniqueTDMSObjects(segments []Segment) []string {
-	// Get All Objets from each Segments
+	// Get All Objets from each Segment
 	// Remove all duplicates
 	// Remove "/"
 	// Remove "/<string>/<string>"
@@ -929,14 +1007,6 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 			if _, present := propertyMap[objPath]; present {
 				// Property Maps Exists for Path
 				propertyMap[objPath][property.name] = property
-				// if _, present := propMap[property.name]; present {
-				// 	// Property Exists in Property Map
-				// 	// Update it
-				// 	// MAYBE NOT NECESSARY?
-				// 	propertyMap[objPath][property.name] = property
-				// } else {
-				// 	propertyMap[objPath][property.name] = property
-				// }
 			} else {
 				// Property Map Doesn't exist for Path yet
 				initMap := map[string]Property{
@@ -952,6 +1022,13 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		}
 	}
 	return objMap, objOrder, propertyMap
+}
+
+func readChannelRawData(file *os.File, channelPath string, allSegments []Segment) {
+	// Determine Data Type of Segment
+	// if TWF, defined by the properties
+	// return RMS, P-P, CF for the whole file, add option for Block-by-block, that returns a slice
+	fmt.Println("REMOVE ME: Reading ", channelPath)
 }
 
 // Read the Properties for a TDMS Object
