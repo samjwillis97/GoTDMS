@@ -1031,9 +1031,12 @@ func readChannelRawData(file *os.File, channelPath string, length int64, offset 
 	// Determine Data Type of Segment
 	// if TWF, defined by the properties
 	// return RMS, P-P, CF for the whole file, add option for Block-by-block, that returns a slice
+	firstSeg := true
+
+	writer := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', tabwriter.AlignRight)
 
 	// Iterate through all File Segments
-	for _, segment := range allSegments {
+	for i, segment := range allSegments {
 		// Iterate through all the objects in order
 		// Skipping over the data we don't need to read
 		_, err := file.Seek(int64(segment.dataPos), 0)
@@ -1048,10 +1051,15 @@ func readChannelRawData(file *os.File, channelPath string, length int64, offset 
 				log.Fatalln("Error from file.Seek in readChannelRawData")
 			}
 			if objPath == channelPath {
+
 				switch obj.rawDataIndex.dataType {
 				case SGL:
+					if firstSeg {
+						fmt.Fprintf(writer, "Seg No.\tRMS\n")
+					}
 					data := SGLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
-					fmt.Println("Average: ", averageFloat32Slice(data))
+
+					fmt.Fprintf(writer, "%d\t%.4f\n", i, rmsFloat32Slice(data))
 
 				case DBL:
 					data := DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
@@ -1060,11 +1068,13 @@ func readChannelRawData(file *os.File, channelPath string, length int64, offset 
 				default:
 					log.Fatal("Data Type Not Implemented")
 				}
+
+				firstSeg = false
 			} else {
 			}
 		}
-		// 		data := DBLArrayFromTDMS(file, int64(element.numValues), 0, 1)
 	}
+	writer.Flush()
 }
 
 // Read the Properties for a TDMS Object
@@ -1448,24 +1458,52 @@ func minMaxFloat64Slice(y []float64) (min float64, max float64) {
 	return min, max
 }
 
+func rmsFloat32Slice(y []float32) (rms float64) {
+	meanSqr := math.Pow(float64(y[0]), 2)
+
+	y = y[1:]
+
+	for _, v := range y {
+		meanSqr += math.Pow(float64(v), 2)
+	}
+
+	return math.Sqrt(float64(meanSqr) / float64(len(y)+1))
+}
+
+func rmsFloat64Slice(y []float64) (rms float64) {
+	meanSqr := math.Pow(y[0], 2)
+
+	y = y[1:]
+
+	for _, v := range y {
+		meanSqr += math.Pow(v, 2)
+	}
+
+	return math.Sqrt(meanSqr / float64(len(y)+1))
+}
+
 func averageFloat32Slice(y []float32) (avg float32) {
 	avg = y[0]
+
+	y = y[1:]
 
 	for _, v := range y {
 		avg += v
 	}
 
-	return avg / float32(len(y))
+	return avg / float32(len(y)+1)
 }
 
 func averageFloat64Slice(y []float64) (avg float64) {
 	avg = y[0]
 
+	y = y[1:]
+
 	for _, v := range y {
 		avg += v
 	}
 
-	return avg / float64(len(y))
+	return avg / float64(len(y)+1)
 }
 
 // Sorting for Properties
