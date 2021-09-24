@@ -1033,7 +1033,7 @@ func readChannelRawData(file *os.File, channelPath string, length int64, offset 
 	// return RMS, P-P, CF for the whole file, add option for Block-by-block, that returns a slice
 
 	// Iterate through all File Segments
-	for i, segment := range allSegments {
+	for _, segment := range allSegments {
 		// Iterate through all the objects in order
 		// Skipping over the data we don't need to read
 		_, err := file.Seek(int64(segment.dataPos), 0)
@@ -1041,16 +1041,17 @@ func readChannelRawData(file *os.File, channelPath string, length int64, offset 
 			log.Fatalln("Error from file.Seek in readChannelRawData")
 		}
 
-		for j, objPath := range segment.objectOrder {
+		for _, objPath := range segment.objectOrder {
 			obj := segment.objects[objPath]
 			_, err := file.Seek(int64(obj.rawDataIndex.rawDataSize), 1)
 			if err != nil {
 				log.Fatalln("Error from file.Seek in readChannelRawData")
 			}
 			if objPath == channelPath {
-				fmt.Printf("Reading Segment: %d, Obj: %d\n", i, j)
 				switch obj.rawDataIndex.dataType {
 				case SGL:
+					data := SGLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
+					fmt.Println("Average: ", averageFloat32Slice(data))
 
 				case DBL:
 					data := DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
@@ -1355,6 +1356,33 @@ func DBLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []f
 	return vals
 }
 
+func SGLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []float32 {
+	size := int64(4)
+
+	_, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in DBLArrayFromTDMS: ", err)
+	}
+
+	intByteArray := make([]byte, number*size)
+	_, err = io.ReadFull(file, intByteArray)
+	if err != nil {
+		log.Fatal("Error return from io.ReadFull in DBLArrayFromTDMS: ", err)
+	}
+
+	var vals []float32
+
+	for i := int64(0); i < number; i++ {
+		startBit := i * size
+		endBit := startBit + size
+		val := math.Float32frombits(binary.LittleEndian.Uint32(intByteArray[startBit:endBit]))
+		vals = append(vals, val)
+		// log.Debugf("Value %d: %.2f\n", i, val)
+	}
+
+	return vals
+}
+
 // Reads a uint64 from a TDMS File
 // Starts at Byte Defined by Offset
 // When is the reference point for the offset
@@ -1418,6 +1446,16 @@ func minMaxFloat64Slice(y []float64) (min float64, max float64) {
 	}
 
 	return min, max
+}
+
+func averageFloat32Slice(y []float32) (avg float32) {
+	avg = y[0]
+
+	for _, v := range y {
+		avg += v
+	}
+
+	return avg / float32(len(y))
 }
 
 func averageFloat64Slice(y []float64) (avg float64) {
