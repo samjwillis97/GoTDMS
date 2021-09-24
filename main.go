@@ -109,6 +109,7 @@ func main() {
 	var json bool
 	var verbose bool
 	var version bool
+	var timed bool
 
 	//TODO: Implement JSON Outputs
 
@@ -120,6 +121,7 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "Verbose")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose")
 	flag.BoolVar(&version, "version", false, "Version")
+	flag.BoolVar(&timed, "t", false, "Time")
 	flag.Parse()
 
 	if help {
@@ -128,6 +130,12 @@ func main() {
 	} else if version {
 		printVersion()
 		os.Exit(0)
+	}
+
+	var startTime time.Time
+
+	if timed {
+		startTime = time.Now()
 	}
 
 	args := flag.Args()
@@ -255,6 +263,11 @@ func main() {
 	default:
 		fmt.Println("Unkown Command")
 		printHelp()
+	}
+	if timed {
+		elapsed := time.Since(startTime)
+		fmt.Println()
+		fmt.Println("Execution Time: ", elapsed)
 	}
 }
 
@@ -1055,11 +1068,22 @@ func readChannelRawData(file *os.File, channelPath string, length int64, offset 
 				switch obj.rawDataIndex.dataType {
 				case SGL:
 					if firstSeg {
-						fmt.Fprintf(writer, "Seg No.\tRMS\n")
+						fmt.Fprintf(writer, "Seg No. \tRMS \tP-P \tCF\n")
 					}
 					data := SGLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
 
-					fmt.Fprintf(writer, "%d\t%.4f\n", i, rmsFloat32Slice(data))
+					//convert data to float64
+					data64 := make([]float64, 0)
+					for _, val := range data {
+						data64 = append(data64, float64(val))
+					}
+
+					rms := rmsFloat64Slice(data64)
+					min, max := minMaxFloat64Slice(data64)
+					pp := math.Abs(max - min)
+					cf := max / rms
+
+					fmt.Fprintf(writer, "%d \t%.4f \t%.4f \t%.4f\n", i, rms, pp, cf)
 
 				case DBL:
 					data := DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
@@ -1458,18 +1482,6 @@ func minMaxFloat64Slice(y []float64) (min float64, max float64) {
 	return min, max
 }
 
-func rmsFloat32Slice(y []float32) (rms float64) {
-	meanSqr := math.Pow(float64(y[0]), 2)
-
-	y = y[1:]
-
-	for _, v := range y {
-		meanSqr += math.Pow(float64(v), 2)
-	}
-
-	return math.Sqrt(float64(meanSqr) / float64(len(y)+1))
-}
-
 func rmsFloat64Slice(y []float64) (rms float64) {
 	meanSqr := math.Pow(y[0], 2)
 
@@ -1480,18 +1492,6 @@ func rmsFloat64Slice(y []float64) (rms float64) {
 	}
 
 	return math.Sqrt(meanSqr / float64(len(y)+1))
-}
-
-func averageFloat32Slice(y []float32) (avg float32) {
-	avg = y[0]
-
-	y = y[1:]
-
-	for _, v := range y {
-		avg += v
-	}
-
-	return avg / float32(len(y)+1)
 }
 
 func averageFloat64Slice(y []float64) (avg float64) {
