@@ -467,7 +467,7 @@ func displayChannelData(file *os.File, groupName string, channelName string) {
 
 	if channelPresent {
 		fullPath := groupString + "/" + channelString
-		readChannelRawData(file, fullPath, -1, 0, segments)
+		displayChannelRawData(file, fullPath, -1, 0, segments)
 	}
 }
 
@@ -666,6 +666,10 @@ func readAllTDMSSegments(file *os.File) []Segment {
 			break
 		}
 	}
+
+	// TODO:
+	// Iterate through all Each Segments Properties, only keeping latest
+	// Return the latest Properties
 
 	log.Debugln("Finished Reading TDMS Segments")
 
@@ -1040,7 +1044,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	return objMap, objOrder, propertyMap
 }
 
-func readChannelRawData(file *os.File, channelPath string, length int64, offset uint64, allSegments []Segment) {
+func displayChannelRawData(file *os.File, channelPath string, length int64, offset uint64, allSegments []Segment) {
 	// Determine Data Type of Segment
 	// if TWF, defined by the properties
 	// return RMS, P-P, CF for the whole file, add option for Block-by-block, that returns a slice
@@ -1059,41 +1063,61 @@ func readChannelRawData(file *os.File, channelPath string, length int64, offset 
 
 		for _, objPath := range segment.objectOrder {
 			obj := segment.objects[objPath]
-			_, err := file.Seek(int64(obj.rawDataIndex.rawDataSize), 1)
-			if err != nil {
-				log.Fatalln("Error from file.Seek in readChannelRawData")
-			}
+
 			if objPath == channelPath {
 
-				switch obj.rawDataIndex.dataType {
-				case SGL:
+				_, wfStartPresent := segment.propMap[objPath]["wf_start_time"]
+				_, wfStartOffsetPresent := segment.propMap[objPath]["wf_start_offset"]
+				_, wfIncrementPresent := segment.propMap[objPath]["wf_increment"]
+				_, wfSamplesPresent := segment.propMap[objPath]["wf_samples"]
+
+				fmt.Println("New Segment:", i)
+				fmt.Println(segment.propMap[objPath])
+
+				if wfStartPresent && wfStartOffsetPresent && wfIncrementPresent && wfSamplesPresent {
+					log.Debugln("Waveform Present")
+
+					wf_increment := DBLFromTDMS(file, segment.propMap[objPath]["wf_increment"].valuePosition, 0)
+					wf_samples := int32FromTDMS(file, segment.propMap[objPath]["wf_samples"].valuePosition, 0)
+					wf_start_time := timeFromTDMS(file, segment.propMap[objPath]["wf_start_time"].valuePosition, 0)
+
 					if firstSeg {
-						fmt.Fprintf(writer, "Seg No. \tRMS \tP-P \tCF\n")
-					}
-					data := SGLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
+						fmt.Printf("TDMS Path:\t%s\n", channelPath)
+						fmt.Printf("Sample Rate:\t%d Hz\n", int(1/wf_increment))
+						fmt.Printf("Channel Length:\t%d Samples\n", wf_samples)
+						fmt.Printf("Start Time: \t%s\n", wf_start_time)
+						fmt.Printf("Total Segments:\t%d\n", len(allSegments))
 
-					//convert data to float64
-					data64 := make([]float64, 0)
-					for _, val := range data {
-						data64 = append(data64, float64(val))
+						fmt.Fprintf(writer, "\nSeg No. \tRMS \tP-P \tCF\n")
 					}
 
-					rms := rmsFloat64Slice(data64)
-					min, max := minMaxFloat64Slice(data64)
+					data := make([]float64, 0)
+
+					switch obj.rawDataIndex.dataType {
+					case SGL:
+						dataSGL := SGLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), int64(obj.rawDataIndex.rawDataSize), 0)
+
+						//convert data to float64
+						for _, val := range dataSGL {
+							data = append(data, float64(val))
+						}
+
+					case DBL:
+						data = DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), int64(obj.rawDataIndex.rawDataSize), 0)
+
+					default:
+						log.Fatal("Data Type Not Implemented")
+					}
+
+					rms := rmsFloat64Slice(data)
+					min, max := minMaxFloat64Slice(data)
 					pp := math.Abs(max - min)
 					cf := max / rms
 
 					fmt.Fprintf(writer, "%d \t%.4f \t%.4f \t%.4f\n", i, rms, pp, cf)
 
-				case DBL:
-					data := DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), 0, 1)
-					fmt.Println("Average: ", averageFloat64Slice(data))
-
-				default:
-					log.Fatal("Data Type Not Implemented")
+					firstSeg = false
 				}
-
-				firstSeg = false
 			} else {
 			}
 		}
