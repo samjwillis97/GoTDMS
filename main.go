@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/cmplx"
 	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/mjibson/go-dsp/fft"
 	log "github.com/sirupsen/logrus"
+	"gonum.org/v1/gonum/dsp/window"
 )
 
 type LeadInData struct {
@@ -343,7 +346,7 @@ func initLogging(debug bool) {
 func displayTDMSFile(file *os.File, verbose bool) {
 	// Get All Segments, Find all Non Duplicates
 	// Get Each Group, Each Channel and All Properties
-	segments := readAllTDMSSegments(file)
+	segments, _ := readAllTDMSSegments(file)
 
 	paths := readAllUniqueTDMSObjects(segments)
 
@@ -426,7 +429,7 @@ func displayTDMSFile(file *os.File, verbose bool) {
 }
 
 func displayChannelData(file *os.File, groupName string, channelName string) {
-	segments := readAllTDMSSegments(file)
+	segments, props := readAllTDMSSegments(file)
 
 	paths := readAllUniqueTDMSObjects(segments)
 
@@ -467,12 +470,12 @@ func displayChannelData(file *os.File, groupName string, channelName string) {
 
 	if channelPresent {
 		fullPath := groupString + "/" + channelString
-		displayChannelRawData(file, fullPath, -1, 0, segments)
+		displayChannelRawData(file, fullPath, -1, 0, segments, props)
 	}
 }
 
 func displayTDMSGroups(file *os.File) {
-	segments := readAllTDMSSegments(file)
+	segments, _ := readAllTDMSSegments(file)
 
 	paths := readAllUniqueTDMSObjects(segments)
 
@@ -486,7 +489,7 @@ func displayTDMSGroups(file *os.File) {
 }
 
 func displayTDMSGroupChannels(file *os.File, groupName string) {
-	segments := readAllTDMSSegments(file)
+	segments, _ := readAllTDMSSegments(file)
 
 	paths := readAllUniqueTDMSObjects(segments)
 
@@ -519,7 +522,7 @@ func displayTDMSGroupChannels(file *os.File, groupName string) {
 }
 
 func displayTDMSChannelProperties(file *os.File, groupName string, channelName string) {
-	segments := readAllTDMSSegments(file)
+	segments, _ := readAllTDMSSegments(file)
 
 	paths := readAllUniqueTDMSObjects(segments)
 
@@ -620,7 +623,7 @@ func getChannelsFromPathArray(paths []string, group string) []string {
 }
 
 // Get All Segments of TDMS File
-func readAllTDMSSegments(file *os.File) []Segment {
+func readAllTDMSSegments(file *os.File) ([]Segment, map[string]map[string]Property) {
 	// Get File Size
 	fi, err := file.Stat()
 	if err != nil {
@@ -670,10 +673,23 @@ func readAllTDMSSegments(file *os.File) []Segment {
 	// TODO:
 	// Iterate through all Each Segments Properties, only keeping latest
 	// Return the latest Properties
+	objProperties := make(map[string]map[string]Property, 0)
+	for _, seg := range segments {
+		for path, propMap := range seg.propMap {
+			_, pathPresent := objProperties[path]
+			if !pathPresent {
+				objProperties[path] = propMap
+			} else {
+				for prop, propVals := range propMap {
+					objProperties[path][prop] = propVals
+				}
+			}
+		}
+	}
 
 	log.Debugln("Finished Reading TDMS Segments")
 
-	return segments
+	return segments, objProperties
 }
 
 // Reads a TDMS Segment
@@ -1044,7 +1060,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	return objMap, objOrder, propertyMap
 }
 
-func displayChannelRawData(file *os.File, channelPath string, length int64, offset uint64, allSegments []Segment) {
+func displayChannelRawData(file *os.File, channelPath string, length int64, offset uint64, allSegments []Segment, allProps map[string]map[string]Property) {
 	// Determine Data Type of Segment
 	// if TWF, defined by the properties
 	// return RMS, P-P, CF for the whole file, add option for Block-by-block, that returns a slice
@@ -1056,30 +1072,25 @@ func displayChannelRawData(file *os.File, channelPath string, length int64, offs
 	for i, segment := range allSegments {
 		// Iterate through all the objects in order
 		// Skipping over the data we don't need to read
-		_, err := file.Seek(int64(segment.dataPos), 0)
-		if err != nil {
-			log.Fatalln("Error from file.Seek in readChannelRawData")
-		}
-
 		for _, objPath := range segment.objectOrder {
 			obj := segment.objects[objPath]
 
 			if objPath == channelPath {
 
-				_, wfStartPresent := segment.propMap[objPath]["wf_start_time"]
-				_, wfStartOffsetPresent := segment.propMap[objPath]["wf_start_offset"]
-				_, wfIncrementPresent := segment.propMap[objPath]["wf_increment"]
-				_, wfSamplesPresent := segment.propMap[objPath]["wf_samples"]
+				_, wfStartPresent := allProps[objPath]["wf_start_time"]
+				_, wfStartOffsetPresent := allProps[objPath]["wf_start_offset"]
+				_, wfIncrementPresent := allProps[objPath]["wf_increment"]
+				_, wfSamplesPresent := allProps[objPath]["wf_samples"]
 
-				fmt.Println("New Segment:", i)
-				fmt.Println(segment.propMap[objPath])
+				// fmt.Println("New Segment:", i)
+				// fmt.Println(allProps[objPath])
 
 				if wfStartPresent && wfStartOffsetPresent && wfIncrementPresent && wfSamplesPresent {
 					log.Debugln("Waveform Present")
 
-					wf_increment := DBLFromTDMS(file, segment.propMap[objPath]["wf_increment"].valuePosition, 0)
-					wf_samples := int32FromTDMS(file, segment.propMap[objPath]["wf_samples"].valuePosition, 0)
-					wf_start_time := timeFromTDMS(file, segment.propMap[objPath]["wf_start_time"].valuePosition, 0)
+					wf_increment := DBLFromTDMS(file, allProps[objPath]["wf_increment"].valuePosition, 0)
+					wf_samples := int32FromTDMS(file, allProps[objPath]["wf_samples"].valuePosition, 0)
+					wf_start_time := timeFromTDMS(file, allProps[objPath]["wf_start_time"].valuePosition, 0)
 
 					if firstSeg {
 						fmt.Printf("TDMS Path:\t%s\n", channelPath)
@@ -1091,11 +1102,16 @@ func displayChannelRawData(file *os.File, channelPath string, length int64, offs
 						fmt.Fprintf(writer, "\nSeg No. \tRMS \tP-P \tCF\n")
 					}
 
+					_, err := file.Seek(int64(segment.dataPos), 0)
+					if err != nil {
+						log.Fatalln("Error from file.Seek in readChannelRawData")
+					}
+
 					data := make([]float64, 0)
 
 					switch obj.rawDataIndex.dataType {
 					case SGL:
-						dataSGL := SGLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), int64(obj.rawDataIndex.rawDataSize), 0)
+						dataSGL := SGLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), int64(obj.rawDataIndex.rawDataSize), 1)
 
 						//convert data to float64
 						for _, val := range dataSGL {
@@ -1103,7 +1119,7 @@ func displayChannelRawData(file *os.File, channelPath string, length int64, offs
 						}
 
 					case DBL:
-						data = DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), int64(obj.rawDataIndex.rawDataSize), 0)
+						data = DBLArrayFromTDMS(file, int64(obj.rawDataIndex.numValues), int64(obj.rawDataIndex.rawDataSize), 1)
 
 					default:
 						log.Fatal("Data Type Not Implemented")
@@ -1113,6 +1129,11 @@ func displayChannelRawData(file *os.File, channelPath string, length int64, offs
 					min, max := minMaxFloat64Slice(data)
 					pp := math.Abs(max - min)
 					cf := max / rms
+
+					fft := VibFFT(data, wf_increment, 0)
+
+					fmt.Println(maxFloat64(fft))
+					fmt.Println()
 
 					fmt.Fprintf(writer, "%d \t%.4f \t%.4f \t%.4f\n", i, rms, pp, cf)
 
@@ -1528,6 +1549,69 @@ func averageFloat64Slice(y []float64) (avg float64) {
 	}
 
 	return avg / float64(len(y)+1)
+}
+
+func maxFloat64(y []float64) (ndx int, val float64) {
+	max := y[0]
+	index := 0
+
+	for i, v := range y {
+		if v > max {
+			fmt.Printf("%d %e\n", i, v)
+			max = v
+			index = i
+		}
+	}
+
+	return index, max
+}
+
+func VibFFT(y []float64, dt float64, averages int) []float64 {
+	var result = make([]float64, 0)
+	var binSize float64
+	var fMax float64
+
+	if averages > 0 {
+		avgLen := len(y) / averages
+		binSize = 1 / (float64(avgLen) / (1 / dt))
+
+		for i := 0; i < averages; i++ {
+			cut := y[i*avgLen : (i+1)*avgLen]
+			cut = window.Hann(cut)
+			vibFft := fft.FFTReal(cut)
+
+			for j := 0; j < len(cut); j++ {
+				mag, _ := cmplx.Polar(vibFft[j])
+				if i == 0 {
+					result = append(result, mag)
+				} else {
+					result[i] += mag
+				}
+			}
+		}
+		for k := 0; k < len(result); k++ {
+			result[k] = result[k] / float64(averages)
+		}
+	} else {
+		y = window.Hann(y)
+
+		binSize = 1 / (float64(len(y)) / (1 / dt))
+
+		vibFft := fft.FFTReal(y)
+
+		for i := 0; i < len(y); i++ {
+			mag, _ := cmplx.Polar(vibFft[i])
+			result = append(result, mag)
+		}
+	}
+	fMax = binSize * (1 / dt)
+
+	fmt.Printf("FFT Length: %d\n", len(result))
+	fmt.Printf("Bin Size: %.2f\n", binSize)
+	fmt.Printf("F Max: %.0f\n", fMax)
+	fmt.Println()
+
+	return result
 }
 
 // Sorting for Properties
