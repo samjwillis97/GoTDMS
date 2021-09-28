@@ -26,3 +26,4 @@ GoTDMS is a CLI tool written in Go to Read TDMS Files produced by LabVIEW. A lot
   - tdms list properties -> tdms-list properties
   - tdms read -> tdms-read
   - Add a tdms-plot for fun
+- Restructure Project similar to Helm
