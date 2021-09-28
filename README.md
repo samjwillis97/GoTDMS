@@ -16,3 +16,13 @@ GoTDMS is a CLI tool written in Go to Read TDMS Files produced by LabVIEW. A lot
   - tdms read property [group] [channel] [name] [type]
 - Output Group/Channel/s with Offset + Length
   - tdms read data
+
+## TODO
+
+- Split Project up into smaller files, more manageable
+- Split commands up into different files/commands
+  - tdms list groups -> tdms-list groups
+  - tdms list channels -> tdms-list channels
+  - tdms list properties -> tdms-list properties
+  - tdms read -> tdms-read
+  - Add a tdms-plot for fun
