@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -19,7 +20,7 @@ import (
 // 2 = End of File
 //
 // Returns String
-func StringFromTDMS(file *os.File, offset int64, whence int) string {
+func readString(file *os.File, offset int64, whence int) string {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in stringFromTDMS: ", err)
@@ -52,8 +53,8 @@ func StringFromTDMS(file *os.File, offset int64, whence int) string {
 // 2 = End of File
 //
 // Returns int32
-func Int32FromTDMS(file *os.File, offset int64, whence int) int32 {
-	value := Uint32FromTDMS(file, offset, whence)
+func readInt32(file *os.File, offset int64, whence int) int32 {
+	value := readUint32(file, offset, whence)
 	return int32(value)
 }
 
@@ -66,7 +67,7 @@ func Int32FromTDMS(file *os.File, offset int64, whence int) int32 {
 // 2 = End of File
 //
 // Returns uint32
-func Uint32FromTDMS(file *os.File, offset int64, whence int) uint32 {
+func readUint32(file *os.File, offset int64, whence int) uint32 {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in uint32FromTDMS: ", err)
@@ -91,7 +92,7 @@ func Uint32FromTDMS(file *os.File, offset int64, whence int) uint32 {
 // 2 = End of File
 //
 // Returns []uint32
-func Uint32ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []uint32 {
+func readUint32Array(file *os.File, number int64, offset int64, whence int) []uint32 {
 	size := int64(4)
 
 	_, err := file.Seek(offset, whence)
@@ -126,8 +127,8 @@ func Uint32ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) 
 // 2 = End of File
 //
 // Returns int64
-func Int64FromTDMS(file *os.File, offset int64, whence int) int64 {
-	value := Uint64FromTDMS(file, offset, whence)
+func readInt64(file *os.File, offset int64, whence int) int64 {
+	value := readUint64(file, offset, whence)
 	return int64(value)
 }
 
@@ -140,7 +141,7 @@ func Int64FromTDMS(file *os.File, offset int64, whence int) int64 {
 // 2 = End of File
 //
 // Returns uint64
-func Uint64FromTDMS(file *os.File, offset int64, whence int) uint64 {
+func readUint64(file *os.File, offset int64, whence int) uint64 {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in uint64FromTDMS: ", err)
@@ -165,7 +166,7 @@ func Uint64FromTDMS(file *os.File, offset int64, whence int) uint64 {
 // 2 = End of File
 //
 // Returns []uint64
-func Uint64ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []uint64 {
+func readUint64Array(file *os.File, number int64, offset int64, whence int) []uint64 {
 	size := int64(8)
 
 	_, err := file.Seek(offset, whence)
@@ -201,8 +202,8 @@ func Uint64ArrayFromTDMS(file *os.File, number int64, offset int64, whence int) 
 // 2 = End of File
 //
 // Returns Float32
-func SGLFromTDMS(file *os.File, offset int64, whence int) float32 {
-	value := Uint32FromTDMS(file, offset, whence)
+func readSGL(file *os.File, offset int64, whence int) float32 {
+	value := readUint32(file, offset, whence)
 	return math.Float32frombits(value)
 }
 
@@ -215,7 +216,7 @@ func SGLFromTDMS(file *os.File, offset int64, whence int) float32 {
 // 2 = End of File
 //
 // Returns []Float32
-func SGLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []float32 {
+func readSGLArray(file *os.File, number int64, offset int64, whence int) []float32 {
 	size := int64(4)
 
 	_, err := file.Seek(offset, whence)
@@ -251,8 +252,8 @@ func SGLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []f
 // 2 = End of File
 //
 // Returns Float64
-func DBLFromTDMS(file *os.File, offset int64, whence int) float64 {
-	value := Uint64FromTDMS(file, offset, whence)
+func readDBL(file *os.File, offset int64, whence int) float64 {
+	value := readUint64(file, offset, whence)
 	return math.Float64frombits(value)
 }
 
@@ -265,7 +266,7 @@ func DBLFromTDMS(file *os.File, offset int64, whence int) float64 {
 // 2 = End of File
 //
 // Returns []Float64
-func DBLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []float64 {
+func readDBLArray(file *os.File, number int64, offset int64, whence int) []float64 {
 	size := int64(8)
 
 	_, err := file.Seek(offset, whence)
@@ -301,9 +302,9 @@ func DBLArrayFromTDMS(file *os.File, number int64, offset int64, whence int) []f
 // 2 = End of File
 //
 // Returns time.Time
-func TimeFromTDMS(file *os.File, offset int64, whence int) time.Time {
-	posFractions := Uint64FromTDMS(file, offset, whence)
-	LVseconds := Int64FromTDMS(file, 0, 1)
+func readTime(file *os.File, offset int64, whence int) time.Time {
+	posFractions := readUint64(file, offset, whence)
+	LVseconds := readInt64(file, 0, 1)
 	nanoSeconds := float64(posFractions) * math.Pow(2, -64) * 1e9
 	secondsToUnix := 2.083e9
 	timeValue := time.Unix(0, 0)
@@ -347,4 +348,46 @@ func calculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPo
 		log.Fatal("Data Size is not a multiple of Chunk Size")
 		return uint64(0)
 	}
+}
+
+func readAllUniqueTDMSObjects(segments []Segment) []string {
+	// Get All Objets from each Segment
+	// Remove all duplicates
+	// Remove "/"
+	// Remove "/<string>/<string>"
+	// Effectively using a map as a set
+	pathSet := make(map[string]bool)
+	pathArray := make([]string, 0)
+	for _, seg := range segments {
+		for _, path := range seg.objectOrder {
+			exists := pathSet[path]
+			if !(exists) {
+				pathSet[path] = true
+				pathArray = append(pathArray, path)
+			}
+		}
+	}
+
+	return pathArray
+}
+
+func getGroupsFromPathArray(paths []string) []string {
+	var groups []string
+	for _, path := range paths {
+		if (path != "/") && (len(strings.Split(path, "/")) == 2) {
+			groups = append(groups, path)
+		}
+	}
+	return groups
+}
+
+func getChannelsFromPathArray(paths []string, group string) []string {
+	var channels []string
+	for _, path := range paths {
+		splitString := strings.Split(path, "/")
+		if (path != "/") && (len(splitString) == 3) && splitString[1] == ("'"+group+"'") {
+			channels = append(channels, splitString[2])
+		}
+	}
+	return channels
 }

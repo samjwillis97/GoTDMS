@@ -1,17 +1,82 @@
 package tdms
 
 import (
+	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
-	"fmt"
 	"strings"
-	"bytes"
 
 	log "github.com/sirupsen/logrus"
 )
 
+// Each Segment of a TDMS Has a Lead In Section
+type LeadInData struct {
+	ToCMask       uint32
+	versionNumber uint32
+	nextSegOffset uint64
+	rawDataOffset uint64
+	nextSegPos    uint64
+	dataPos       uint64
+}
+
+// Each Segment of a TDMS Consists of all this information
+type Segment struct {
+	position                 uint64
+	numChunks                uint64
+	objects                  map[string]SegmentObject
+	objectOrder              []string
+	kToCMask                 uint32
+	nextSegPos               uint64
+	dataPos                  uint64
+	finalChunkLengthOverride uint64
+	objectIndex              uint64
+	propMap                  map[string]map[string]Property
+}
+
+// Required Data for each Object in a Segment
+type SegmentObject struct {
+	rawDataIndexHeader []byte
+	rawDataIndex       RawDataIndex
+}
+
+// Information from Raw Data Index
+type RawDataIndex struct {
+	dataType       tdsDataType
+	arrayDimension uint32
+	numValues      uint64
+	rawDataSize    uint64
+}
+
 type tdsDataType uint64
+
+type Property struct {
+	name          string
+	dataType      tdsDataType
+	valuePosition int64
+	stringValue   string
+}
+
+type Properties []Property
+
+// Sorting for Properties
+func (p Properties) Len() int { return len(p) }
+
+func (p Properties) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
+func (p Properties) Less(i, j int) bool {
+	var si string = p[i].name
+	var sj string = p[j].name
+	var si_low = strings.ToLower(si)
+	var sj_low = strings.ToLower(sj)
+	if si_low == sj_low {
+		return si < sj
+	}
+	return si_low < sj_low
+}
+
+// Constants
 
 const (
 	Void       tdsDataType = 0
@@ -46,15 +111,6 @@ const (
 	kTocNewObjList      uint32 = 0x4
 )
 
-type LeadInData struct {
-	ToCMask       uint32
-	versionNumber uint32
-	nextSegOffset uint64
-	rawDataOffset uint64
-	nextSegPos    uint64
-	dataPos       uint64
-}
-
 var (
 	noRawDataValue            = []byte{255, 255, 255, 255}
 	matchesPreviousValue      = []byte{0, 0, 0, 0}
@@ -62,54 +118,139 @@ var (
 	daqmxDigitalLineScaler    = []byte{69, 13, 00, 00}
 )
 
-type RawDataIndex struct {
-	dataType       tdsDataType
-	arrayDimension uint32
-	numValues      uint64
-	rawDataSize    uint64
-}
-
-type SegmentObject struct {
-	rawDataIndexHeader []byte
-	rawDataIndex       RawDataIndex
-}
-
-type Property struct {
-	name          string
-	dataType      tdsDataType
-	valuePosition int64
-	stringValue   string
-}
-
-// Sorting for Properties
-func (p Properties) Len() int { return len(p) }
-
-func (p Properties) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
-
-func (p Properties) Less(i, j int) bool {
-	var si string = p[i].name
-	var sj string = p[j].name
-	var si_low = strings.ToLower(si)
-	var sj_low = strings.ToLower(sj)
-	if si_low == sj_low {
-		return si < sj
+// Get All Segments of TDMS File
+func readAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) {
+	// Get File Size
+	fi, err := file.Stat()
+	if err != nil {
+		log.Fatal("Could not Obtain File Stats: ", err)
 	}
-	return si_low < sj_low
+
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in readAllTDMSSegments: ", err)
+	}
+
+	// Init Variables
+	var segments []Segment
+	segmentPos := uint64(0)
+	allPrevSegObjs := make(map[string]SegmentObject)
+
+	prevSegment := Segment{
+		0,
+		0,
+		map[string]SegmentObject{},
+		[]string{},
+		0,
+		0,
+		0,
+		0,
+		0,
+		map[string]map[string]Property{},
+	}
+
+	// Iterate through Segments
+	for {
+		newSegment := readSegment(file, int64(segmentPos), 0, prevSegment, allPrevSegObjs)
+
+		segments = append(segments, newSegment)
+		prevSegment = newSegment
+		segmentPos = newSegment.nextSegPos
+
+		for path, val := range newSegment.objects {
+			allPrevSegObjs[path] = val
+		}
+
+		if segmentPos >= uint64(fi.Size()) {
+			break
+		}
+	}
+
+	// TODO:
+	// Iterate through all Each Segments Properties, only keeping latest
+	// Return the latest Properties
+	objProperties := make(map[string]map[string]Property, 0)
+	for _, seg := range segments {
+		for path, propMap := range seg.propMap {
+			_, pathPresent := objProperties[path]
+			if !pathPresent {
+				objProperties[path] = propMap
+			} else {
+				for prop, propVals := range propMap {
+					objProperties[path][prop] = propVals
+				}
+			}
+		}
+	}
+
+	log.Debugln("Finished Reading TDMS Segments")
+
+	return segments, objProperties
 }
 
-type Properties []Property
+// Reads a TDMS Segment
+// Includes:
+// - Lead In
+// - Meta Data
+// Data is written in Segments, every time data is appended to a TDMS, a new segment is created
+// A segment consists of Lead In, Meta Data, and Raw Data.
+// There are exceptions to the rules
+// hence Different Groups when written after each other will be in different seg
+func readSegment(file *os.File, offset int64, whence int, prevSegment Segment, allPrevSegObjs map[string]SegmentObject) Segment {
+	startPos, err := file.Seek(offset, whence)
+	if err != nil {
+		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
+	}
+	log.Debugf("Reading TDMS Segement starting at: %d", startPos)
 
-type Segment struct {
-	position                 uint64
-	numChunks                uint64
-	objects                  map[string]SegmentObject
-	objectOrder              []string
-	kToCMask                 uint32
-	nextSegPos               uint64
-	dataPos                  uint64
-	finalChunkLengthOverride uint64
-	objectIndex              uint64
-	propMap                  map[string]map[string]Property
+	// Read TDMS Lead In
+	// leadIn := readTDMSLeadIn(file, offset, whence)
+	leadIn := readLeadIn(file, 0, 1)
+
+	// Read TDMS Meta Data
+	objMap, objOrder, propMap := readMetaData(file, 0, 1, leadIn, prevSegment, allPrevSegObjs)
+
+	// Calculate Number of Chunks
+	numChunks := calculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
+
+	// Object Index
+	index := prevSegment.objectIndex + 1
+
+	// TODO: Finish Reading Raw Data
+	// if (0b100000 & leadIn.ToCMask) == 0b100000 {
+	// Segment Contains Interleaved Data
+	// }
+
+	// Read Data Ch by Ch
+	// for key, element := range objMap {
+	// 	switch element.dataType {
+	// 	default:
+	// 		_, err := file.Seek(int64(element.rawDataSize), 1)
+	// 		if err != nil {
+	// 			log.Fatal("Error return by file.Seek in readTDMSSegment: ", err)
+	// 		}
+	// 	case DBL:
+	// 		data := DBLArrayFromTDMS(file, int64(element.numValues), 0, 1)
+	// 		dataMin, dataMax := minMaxFloat64Slice(data)
+	// 		log.Debugf("Read %s Values\n", key)
+	// 		log.Debugf("Number of Values: %d\n", len(data))
+	// 		log.Debugf("Max Value: %.6f\n", dataMax)
+	// 		log.Debugf("Min Value: %.6f\n", dataMin)
+	// 		log.Debugf("Average Value: %.6f\n", averageFloat64Slice(data))
+	// 	}
+	// }
+	return Segment{
+		uint64(startPos),
+		numChunks,
+		objMap,
+		objOrder,
+		leadIn.ToCMask,
+		leadIn.nextSegPos,
+		leadIn.dataPos,
+		0, //TODO: Implement
+		index,
+		propMap,
+	}
 }
 
 // Reads the TDMS Lead-In (28 Bytes) of a Segment
@@ -127,7 +268,7 @@ type Segment struct {
 // 2 = End of File
 //
 // Returns LeadInData
-func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
+func readLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	segmentStartPos, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
@@ -180,7 +321,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	// 4 Byte Version Number
 	// 4713 = v2.0
 	// 4712 = Older
-	versionNumber := Uint32FromTDMS(file, 0, 1)
+	versionNumber := readUint32(file, 0, 1)
 	log.Debugln("Version Number: ", versionNumber)
 
 	// 8 Bytes - Length of Remaining Segment
@@ -188,13 +329,13 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	// Remaining Length = Overall Length of Segment - Length of Lead in ()
 	// If an application encounters a problem writing, all bytes will = 0xFF
 	// can only happen at EOF
-	segLength := Uint64FromTDMS(file, 0, 1)
+	segLength := readUint64(file, 0, 1)
 	log.Debugln("Segment Length: ", segLength)
 
 	// 8 Bytes - Length of Metadata in Segment
 	// Also known as raw data offset
 	// If segment contains no metadata will = 0
-	metaLength := Uint64FromTDMS(file, 0, 1)
+	metaLength := readUint64(file, 0, 1)
 	log.Debugln("Metadata Length: ", metaLength)
 
 	leadInSize := uint64(28)
@@ -238,7 +379,7 @@ func readTDMSLeadIn(file *os.File, offset int64, whence int) LeadInData {
 // 2 = End of File
 //
 // Returns Segment Objects and Properties
-func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment, allPrevSegObjs map[string]SegmentObject) (map[string]SegmentObject, []string, map[string]map[string]Property) {
+func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment, allPrevSegObjs map[string]SegmentObject) (map[string]SegmentObject, []string, map[string]map[string]Property) {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -272,7 +413,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 	log.Debugln("READING METADATA")
 
 	// First 4 Bytes have number of objects in metadata
-	numObjects := Uint32FromTDMS(file, 0, 1)
+	numObjects := readUint32(file, 0, 1)
 	log.Debugln("Number of Objects: ", numObjects)
 
 	// ar objects = make([]string, numObjects)
@@ -280,7 +421,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		log.Debugf("Reading Object %d \n", i)
 
 		// Read Object Path
-		objPath := StringFromTDMS(file, 0, 1)
+		objPath := readString(file, 0, 1)
 		log.Debugf("Object %d Path: %s\n", i, objPath)
 
 		// Read Raw Data Index/Length of Index Information
@@ -323,7 +464,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 			} else {
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
-					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+					readRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
 			}
 		} else if val, present := allPrevSegObjs[objPath]; present {
@@ -362,7 +503,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 				// Changed Metadata in this Section
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
-					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+					readRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
 				objOrder = append(objOrder, objPath)
 			}
@@ -374,7 +515,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 			} else if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) != 0 {
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
-					readTDMSRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+					readRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
 				objOrder = append(objOrder, objPath)
 			} else {
@@ -392,13 +533,13 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 		}
 
 		// Number of Object Properties
-		numProperties := Uint32FromTDMS(file, 0, 1)
+		numProperties := readUint32(file, 0, 1)
 		log.Debugf("Number of Object %d Properties: %d\n", i, numProperties)
 
 		// Read Properties
 		for j := uint32(0); j < numProperties; j++ {
 			log.Debugf("Reading Object %d Property %d\n", i, j)
-			property := readTDMSProperty(file, 0, 1)
+			property := readProperty(file, 0, 1)
 			// if propMap, present := propertyMap[objPath]; present {
 			if _, present := propertyMap[objPath]; present {
 				// Property Maps Exists for Path
@@ -423,7 +564,7 @@ func readTDMSMetaData(file *os.File, offset int64, whence int, leadin LeadInData
 // Reads Raw Data Index of a Segment Object
 //
 // Returns RawDataIndex
-func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeader []byte) RawDataIndex {
+func readRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeader []byte) RawDataIndex {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return by file.Seek in readTDMSRawDataIndex: ", err)
@@ -432,16 +573,16 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 	indexLength := binary.LittleEndian.Uint32(rawDataIndexHeader)
 	log.Debugf("Object Index Length: %d\n", indexLength)
 
-	dataType := tdsDataType(Uint32FromTDMS(file, 0, 1))
+	dataType := tdsDataType(readUint32(file, 0, 1))
 	log.Debugf("Object Data Type: %d\n", dataType)
 
 	// must equal 1 for v2.0
-	arrayDimension := Uint32FromTDMS(file, 0, 1)
+	arrayDimension := readUint32(file, 0, 1)
 	if arrayDimension != 1 {
 		log.Fatal("Not Valid TDMS 2.0, Data Dimension is not 1")
 	}
 
-	numValues := Uint64FromTDMS(file, 0, 1)
+	numValues := readUint64(file, 0, 1)
 	log.Debugf("Object Number of Values: %d\n", numValues)
 
 	dataSize := 0
@@ -470,18 +611,18 @@ func readTDMSRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexH
 }
 
 // Reads a single property from a Segment Object
-func readTDMSProperty(file *os.File, offset int64, whence int) Property {
+func readProperty(file *os.File, offset int64, whence int) Property {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
 	}
 
 	// Property Name
-	propertyName := StringFromTDMS(file, 0, 1)
+	propertyName := readString(file, 0, 1)
 	// log.Debugf("Property Name: %s\n", propertyName)
 
 	// Debuged in Hex
-	propertyDataType := Uint32FromTDMS(file, 0, 1)
+	propertyDataType := readUint32(file, 0, 1)
 	propertyTdsDataType := tdsDataType(propertyDataType)
 
 	// Position for reading later
@@ -497,17 +638,17 @@ func readTDMSProperty(file *os.File, offset int64, whence int) Property {
 	default:
 		log.Fatal("Property Data Type Unkown")
 	case String:
-		valueString = StringFromTDMS(file, 0, 1)
+		valueString = readString(file, 0, 1)
 	case Int32:
-		valueString = fmt.Sprintf("%d", Int32FromTDMS(file, 0, 1))
+		valueString = fmt.Sprintf("%d", readInt32(file, 0, 1))
 	case Uint32:
-		valueString = fmt.Sprintf("%d", Uint32FromTDMS(file, 0, 1))
+		valueString = fmt.Sprintf("%d", readUint32(file, 0, 1))
 	case Uint64:
-		valueString = fmt.Sprintf("%d", Uint64FromTDMS(file, 0, 1))
+		valueString = fmt.Sprintf("%d", readUint64(file, 0, 1))
 	case DBL:
-		valueString = fmt.Sprintf("%e", DBLFromTDMS(file, 0, 1))
+		valueString = fmt.Sprintf("%e", readDBL(file, 0, 1))
 	case Timestamp:
-		valueString = TimeFromTDMS(file, 0, 1).String()
+		valueString = readTime(file, 0, 1).String()
 	}
 
 	return Property{
