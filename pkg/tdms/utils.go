@@ -328,9 +328,10 @@ func calculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPo
 	totalDataSize := nextSegPos - dataPos
 	log.Debugf("Total Data Size: %d", totalDataSize)
 
-	if dataSize < 0 || totalDataSize < 0 {
-		log.Fatal("Negative data size")
-	} else if dataSize == 0 {
+	// if dataSize < 0 || totalDataSize < 0 {
+	// 	log.Fatal("Negative data size")
+	// } else if dataSize == 0 {
+	if dataSize == 0 {
 		// npTDMS: sometimes kTocRawData is set, but there isn't actually any data
 		if totalDataSize != dataSize {
 			log.Fatal("Zero channel data size but data length")
