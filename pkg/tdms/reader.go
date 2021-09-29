@@ -169,7 +169,7 @@ func readAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) 
 	// TODO:
 	// Iterate through all Each Segments Properties, only keeping latest
 	// Return the latest Properties
-	objProperties := make(map[string]map[string]Property, 0)
+	objProperties := make(map[string]map[string]Property)
 	for _, seg := range segments {
 		for path, propMap := range seg.propMap {
 			_, pathPresent := objProperties[path]
@@ -443,18 +443,18 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		if val, present := objMap[objPath]; present {
 			log.Debugf("Updating Existing %s Object\n", objPath)
 			// Current Header says No Data
-			if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) == 0 {
+			if bytes.Equal(rawDataIndexHeaderBytes, noRawDataValue) {
 				// Matched Header says Has Data
-				if bytes.Compare(val.rawDataIndexHeader, noRawDataValue) != 0 {
+				if !bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
 					objMap[objPath] = SegmentObject{
 						rawDataIndexHeaderBytes,
 						val.rawDataIndex,
 					}
 				}
 				// Current Header Matches Previous
-			} else if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
+			} else if bytes.Equal(rawDataIndexHeaderBytes, matchesPreviousValue) {
 				// Previous has No Raw Data
-				if bytes.Compare(val.rawDataIndexHeader, noRawDataValue) == 0 {
+				if bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
 					objMap[objPath] = SegmentObject{
 						rawDataIndexHeaderBytes,
 						val.rawDataIndex,
@@ -470,9 +470,9 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		} else if val, present := allPrevSegObjs[objPath]; present {
 			log.Debugf("Reusing Previous %s Object\n", objPath)
 			// reuse previous object
-			if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) == 0 {
+			if bytes.Equal(rawDataIndexHeaderBytes, noRawDataValue) {
 				// Reuse Segment  But Leave Data Index Information as Set Previously
-				if bytes.Compare(val.rawDataIndexHeader, noRawDataValue) == 0 {
+				if bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
 					// Previous Segment has Data
 					// Copy Previos to Current, Leaving Header
 					objMap[objPath] = SegmentObject{
@@ -486,8 +486,8 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 					objOrder = append(objOrder, objPath)
 				}
 				// Matches Previous
-			} else if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
-				if bytes.Compare(val.rawDataIndexHeader, noRawDataValue) != 0 {
+			} else if bytes.Equal(rawDataIndexHeaderBytes, matchesPreviousValue) {
+				if !bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
 					// Copy Previos to Current, Leaving Header
 					objMap[objPath] = SegmentObject{
 						rawDataIndexHeaderBytes,
@@ -510,9 +510,9 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		} else {
 			log.Debugf("New Segment Object: %s\n", objPath)
 			// New Segment Object
-			if bytes.Compare(rawDataIndexHeaderBytes, matchesPreviousValue) == 0 {
+			if bytes.Equal(rawDataIndexHeaderBytes, matchesPreviousValue) {
 				log.Fatalln("Raw Data Index says to reuse previous, though this object has not been seen before: ", objPath)
-			} else if bytes.Compare(rawDataIndexHeaderBytes, noRawDataValue) != 0 {
+			} else if !bytes.Equal(rawDataIndexHeaderBytes, noRawDataValue) {
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
 					readRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
