@@ -7,18 +7,22 @@ import (
 	"gonum.org/v1/gonum/dsp/window"
 )
 
+type SpectrumInfo struct {
+	fMax	float64
+	binSize float64
+}
+
 // Performs an FFT on a []float64
 // Uses a Hanning Window by Default
 //
 // Returns FFT as a []float64 and FFT Information
-func VibFFT(y []float64, dt float64, averages int) []float64 {
+func VibFFT(y []float64, dt float64, averages int) ([]float64, SpectrumInfo) {
 	var result = make([]float64, 0)
-	// var binSize float64
-	// var fMax float64
+	var specInfo SpectrumInfo
 
 	if averages > 0 {
 		avgLen := len(y) / averages
-		// binSize = 1 / (float64(avgLen) / (1 / dt))
+		specInfo.binSize = 1 / (float64(avgLen) / (1 / dt))
 
 		for i := 0; i < averages; i++ {
 			cut := y[i*avgLen : (i+1)*avgLen]
@@ -40,7 +44,7 @@ func VibFFT(y []float64, dt float64, averages int) []float64 {
 	} else {
 		y = window.Hann(y)
 
-		// binSize = 1 / (float64(len(y)) / (1 / dt))
+		specInfo.binSize = 1 / (float64(len(y)) / (1 / dt))
 
 		vibFft := fft.FFTReal(y)
 
@@ -49,12 +53,7 @@ func VibFFT(y []float64, dt float64, averages int) []float64 {
 			result = append(result, mag)
 		}
 	}
-	// fMax = binSize * (1 / dt)
+	specInfo.fMax = specInfo.binSize * (1 / dt)
 
-	// fmt.Printf("FFT Length: %d\n", len(result))
-	// fmt.Printf("Bin Size: %.2f\n", binSize)
-	// fmt.Printf("F Max: %.0f\n", fMax)
-	// fmt.Println()
-
-	return result
+	return result, specInfo
 }

@@ -284,7 +284,7 @@ func DisplayChannelRawData(file *os.File, channelPath string, length int64, offs
 					if firstSeg {
 						fmt.Printf("TDMS Path:\t%s\n", channelPath)
 						fmt.Printf("Sample Rate:\t%d Hz\n", int(1/wf_increment))
-						fmt.Printf("Channel Length:\t%d Samples\n", wf_samples)
+						fmt.Printf("Segment Length Length:\t%d Samples\n", wf_samples)
 						fmt.Printf("Start Time: \t%s\n", wf_start_time)
 						fmt.Printf("Total Segments:\t%d\n", len(allSegments))
 
@@ -319,10 +319,10 @@ func DisplayChannelRawData(file *os.File, channelPath string, length int64, offs
 					pp := math.Abs(max - min)
 					cf := max / rms
 
-					fft := analysis.VibFFT(data, wf_increment, 0)
+					// fft, _ := analysis.VibFFT(data, wf_increment, 0)
 
-					fmt.Println(analysis.MaxFloat64(fft))
-					fmt.Println()
+					// fmt.Println(analysis.MaxFloat64(fft))
+					// fmt.Println()
 
 					fmt.Fprintf(writer, "%d \t%.4f \t%.4f \t%.4f\n", i, rms, pp, cf)
 
