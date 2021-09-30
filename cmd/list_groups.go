@@ -14,7 +14,7 @@ func init() {
 var listGroupsCmd = &cobra.Command{
 	Use:   "list-groups [file]",
 	Short: "List the groups in the given TDMS File",
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Verify Arg one is file
 		filePath := args[0]

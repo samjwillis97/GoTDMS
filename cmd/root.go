@@ -19,9 +19,15 @@ var (
 	StartTime time.Time
 
 	rootCmd = &cobra.Command{
-		Use:     "gotdms",
-		Short:   "GoTDMS is a Command Line NI TDMS File Reader",
-		PostRun: postRunFunc,
+		Use:   "gotdms",
+		Short: "GoTDMS is a Command Line NI TDMS File Reader",
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			if Timed {
+				elapsed := time.Since(StartTime)
+				fmt.Println()
+				fmt.Println("Execution Time: ", elapsed)
+			}
+		},
 	}
 )
 
@@ -60,6 +66,7 @@ func initLogging() {
 	log.SetOutput(mw)
 
 	if Debug {
+		fmt.Println("DEBUG Started")
 		log.SetLevel(log.DebugLevel)
 	}
 	// log.SetReportCaller(true)
@@ -71,6 +78,7 @@ func initLogging() {
 
 func postRunFunc(cmd *cobra.Command, args []string) {
 	//TODO: Fixed Time
+	fmt.Println("Post Run")
 	if Timed {
 		elapsed := time.Since(StartTime)
 		fmt.Println()

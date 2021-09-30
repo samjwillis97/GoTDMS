@@ -14,7 +14,7 @@ func init() {
 var listChannelsCmd = &cobra.Command{
 	Use:   "list-channels [file] [group]",
 	Short: "List the channels in the given group of a TDMS File",
-	Args:  cobra.MinimumNArgs(2),
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Verify Arg one is file
 		filePath := args[0]

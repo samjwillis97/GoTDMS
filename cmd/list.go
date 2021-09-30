@@ -14,7 +14,7 @@ func init() {
 var listCmd = &cobra.Command{
 	Use:   "list [file]",
 	Short: "List the full TDMS file",
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath := args[0]
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {

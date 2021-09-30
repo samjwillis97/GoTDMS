@@ -14,7 +14,7 @@ func init() {
 var listPropertiesCmd = &cobra.Command{
 	Use:   "list-properties [file] [group] [channel]",
 	Short: "List the properties of the given channel of a TDMS File",
-	Args:  cobra.MinimumNArgs(3),
+	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath := args[0]
 		groupName := args[1]
