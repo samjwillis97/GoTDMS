@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/samjwillis97/GoTDMS/cmd"
 	"github.com/samjwillis97/GoTDMS/pkg/tdms"
 	log "github.com/sirupsen/logrus"
 )
@@ -14,6 +15,10 @@ import (
 const versionString string = "0.0.1.0"
 
 func main() {
+	cmd.Execute()
+}
+
+func old_main() {
 	var debug bool
 	var help bool
 	var json bool
