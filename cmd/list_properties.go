@@ -8,15 +8,17 @@ import (
 )
 
 func init() {
-	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(listPropertiesCmd)
 }
 
-var listCmd = &cobra.Command{
-	Use:   "list [file]",
-	Short: "List the full TDMS file",
-	Args:  cobra.MinimumNArgs(1),
+var listPropertiesCmd = &cobra.Command{
+	Use:   "list-properties [file] [group] [channel]",
+	Short: "List the properties of the given channel of a TDMS File",
+	Args:  cobra.MinimumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath := args[0]
+		groupName := args[1]
+		channelName := args[2]
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			return err
 		}
@@ -24,7 +26,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		tdms.DisplayFile(file, Verbose)
+		tdms.DisplayChannelProperties(file, groupName, channelName)
 		file.Close()
 		return nil
 	},

@@ -8,14 +8,15 @@ import (
 )
 
 func init() {
-	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(listGroupsCmd)
 }
 
-var listCmd = &cobra.Command{
-	Use:   "list [file]",
-	Short: "List the full TDMS file",
+var listGroupsCmd = &cobra.Command{
+	Use:   "list-groups [file]",
+	Short: "List the groups in the given TDMS File",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Verify Arg one is file
 		filePath := args[0]
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			return err
@@ -24,7 +25,7 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		tdms.DisplayFile(file, Verbose)
+		tdms.DisplayGroups(file)
 		file.Close()
 		return nil
 	},
