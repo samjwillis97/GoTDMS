@@ -20,7 +20,7 @@ import (
 // 2 = End of File
 //
 // Returns String
-func readString(file *os.File, offset int64, whence int) string {
+func ReadString(file *os.File, offset int64, whence int) string {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in stringFromTDMS: ", err)
@@ -53,8 +53,8 @@ func readString(file *os.File, offset int64, whence int) string {
 // 2 = End of File
 //
 // Returns int32
-func readInt32(file *os.File, offset int64, whence int) int32 {
-	value := readUint32(file, offset, whence)
+func ReadInt32(file *os.File, offset int64, whence int) int32 {
+	value := ReadUint32(file, offset, whence)
 	return int32(value)
 }
 
@@ -67,7 +67,7 @@ func readInt32(file *os.File, offset int64, whence int) int32 {
 // 2 = End of File
 //
 // Returns uint32
-func readUint32(file *os.File, offset int64, whence int) uint32 {
+func ReadUint32(file *os.File, offset int64, whence int) uint32 {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in uint32FromTDMS: ", err)
@@ -92,7 +92,7 @@ func readUint32(file *os.File, offset int64, whence int) uint32 {
 // 2 = End of File
 //
 // Returns []uint32
-func readUint32Array(file *os.File, number int64, offset int64, whence int) []uint32 {
+func ReadUint32Array(file *os.File, number int64, offset int64, whence int) []uint32 {
 	size := int64(4)
 
 	_, err := file.Seek(offset, whence)
@@ -202,8 +202,8 @@ func readUint64Array(file *os.File, number int64, offset int64, whence int) []ui
 // 2 = End of File
 //
 // Returns Float32
-func readSGL(file *os.File, offset int64, whence int) float32 {
-	value := readUint32(file, offset, whence)
+func ReadSGL(file *os.File, offset int64, whence int) float32 {
+	value := ReadUint32(file, offset, whence)
 	return math.Float32frombits(value)
 }
 
@@ -216,7 +216,7 @@ func readSGL(file *os.File, offset int64, whence int) float32 {
 // 2 = End of File
 //
 // Returns []Float32
-func readSGLArray(file *os.File, number int64, offset int64, whence int) []float32 {
+func ReadSGLArray(file *os.File, number int64, offset int64, whence int) []float32 {
 	size := int64(4)
 
 	_, err := file.Seek(offset, whence)
@@ -252,7 +252,7 @@ func readSGLArray(file *os.File, number int64, offset int64, whence int) []float
 // 2 = End of File
 //
 // Returns Float64
-func readDBL(file *os.File, offset int64, whence int) float64 {
+func ReadDBL(file *os.File, offset int64, whence int) float64 {
 	value := readUint64(file, offset, whence)
 	return math.Float64frombits(value)
 }
@@ -266,7 +266,7 @@ func readDBL(file *os.File, offset int64, whence int) float64 {
 // 2 = End of File
 //
 // Returns []Float64
-func readDBLArray(file *os.File, number int64, offset int64, whence int) []float64 {
+func ReadDBLArray(file *os.File, number int64, offset int64, whence int) []float64 {
 	size := int64(8)
 
 	_, err := file.Seek(offset, whence)
@@ -302,7 +302,7 @@ func readDBLArray(file *os.File, number int64, offset int64, whence int) []float
 // 2 = End of File
 //
 // Returns time.Time
-func readTime(file *os.File, offset int64, whence int) time.Time {
+func ReadTime(file *os.File, offset int64, whence int) time.Time {
 	posFractions := readUint64(file, offset, whence)
 	LVseconds := readInt64(file, 0, 1)
 	nanoSeconds := float64(posFractions) * math.Pow(2, -64) * 1e9
@@ -318,7 +318,7 @@ func readTime(file *os.File, offset int64, whence int) time.Time {
 // ObjMap/Segment.objects
 // segment.nextSegPos
 // segment.dataPos
-func calculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPos uint64) uint64 {
+func CalculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPos uint64) uint64 {
 	dataSize := uint64(0)
 	for _, e := range objects {
 		dataSize += e.rawDataIndex.rawDataSize
@@ -351,7 +351,7 @@ func calculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPo
 	}
 }
 
-func readAllUniqueTDMSObjects(segments []Segment) []string {
+func ReadAllUniqueTDMSObjects(segments []Segment) []string {
 	// Get All Objets from each Segment
 	// Remove all duplicates
 	// Remove "/"
@@ -372,7 +372,7 @@ func readAllUniqueTDMSObjects(segments []Segment) []string {
 	return pathArray
 }
 
-func getGroupsFromPathArray(paths []string) []string {
+func GetGroupsFromPathArray(paths []string) []string {
 	var groups []string
 	for _, path := range paths {
 		if (path != "/") && (len(strings.Split(path, "/")) == 2) {
@@ -382,7 +382,7 @@ func getGroupsFromPathArray(paths []string) []string {
 	return groups
 }
 
-func getChannelsFromPathArray(paths []string, group string) []string {
+func GetChannelsFromPathArray(paths []string, group string) []string {
 	var channels []string
 	for _, path := range paths {
 		splitString := strings.Split(path, "/")

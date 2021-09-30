@@ -119,7 +119,7 @@ var (
 )
 
 // Get All Segments of TDMS File
-func readAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) {
+func ReadAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) {
 	// Get File Size
 	fi, err := file.Stat()
 	if err != nil {
@@ -151,7 +151,7 @@ func readAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) 
 
 	// Iterate through Segments
 	for {
-		newSegment := readSegment(file, int64(segmentPos), 0, prevSegment, allPrevSegObjs)
+		newSegment := ReadSegment(file, int64(segmentPos), 0, prevSegment, allPrevSegObjs)
 
 		segments = append(segments, newSegment)
 		prevSegment = newSegment
@@ -196,7 +196,7 @@ func readAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) 
 // A segment consists of Lead In, Meta Data, and Raw Data.
 // There are exceptions to the rules
 // hence Different Groups when written after each other will be in different seg
-func readSegment(file *os.File, offset int64, whence int, prevSegment Segment, allPrevSegObjs map[string]SegmentObject) Segment {
+func ReadSegment(file *os.File, offset int64, whence int, prevSegment Segment, allPrevSegObjs map[string]SegmentObject) Segment {
 	startPos, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
@@ -205,13 +205,11 @@ func readSegment(file *os.File, offset int64, whence int, prevSegment Segment, a
 
 	// Read TDMS Lead In
 	// leadIn := readTDMSLeadIn(file, offset, whence)
-	leadIn := readLeadIn(file, 0, 1)
+	leadIn := ReadLeadIn(file, 0, 1)
 
-	// Read TDMS Meta Data
-	objMap, objOrder, propMap := readMetaData(file, 0, 1, leadIn, prevSegment, allPrevSegObjs)
-
-	// Calculate Number of Chunks
-	numChunks := calculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
+	// Read TDMS Meta Data objMap, objOrder, propMap := ReadMetaData(file, 0, 1, leadIn, prevSegment, allPrevSegObjs)
+	objMap, objOrder, propMap := ReadMetaData(file, 0, 1, leadIn, prevSegment, allPrevSegObjs)
+	numChunks := CalculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
 
 	// Object Index
 	index := prevSegment.objectIndex + 1
@@ -268,7 +266,7 @@ func readSegment(file *os.File, offset int64, whence int, prevSegment Segment, a
 // 2 = End of File
 //
 // Returns LeadInData
-func readLeadIn(file *os.File, offset int64, whence int) LeadInData {
+func ReadLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	segmentStartPos, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSLeadIn: ", err)
@@ -321,7 +319,7 @@ func readLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	// 4 Byte Version Number
 	// 4713 = v2.0
 	// 4712 = Older
-	versionNumber := readUint32(file, 0, 1)
+	versionNumber := ReadUint32(file, 0, 1)
 	log.Debugln("Version Number: ", versionNumber)
 
 	// 8 Bytes - Length of Remaining Segment
@@ -379,7 +377,7 @@ func readLeadIn(file *os.File, offset int64, whence int) LeadInData {
 // 2 = End of File
 //
 // Returns Segment Objects and Properties
-func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment, allPrevSegObjs map[string]SegmentObject) (map[string]SegmentObject, []string, map[string]map[string]Property) {
+func ReadMetaData(file *os.File, offset int64, whence int, leadin LeadInData, prevSegment Segment, allPrevSegObjs map[string]SegmentObject) (map[string]SegmentObject, []string, map[string]map[string]Property) {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
@@ -413,7 +411,7 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 	log.Debugln("READING METADATA")
 
 	// First 4 Bytes have number of objects in metadata
-	numObjects := readUint32(file, 0, 1)
+	numObjects := ReadUint32(file, 0, 1)
 	log.Debugln("Number of Objects: ", numObjects)
 
 	// ar objects = make([]string, numObjects)
@@ -421,7 +419,7 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		log.Debugf("Reading Object %d \n", i)
 
 		// Read Object Path
-		objPath := readString(file, 0, 1)
+		objPath := ReadString(file, 0, 1)
 		log.Debugf("Object %d Path: %s\n", i, objPath)
 
 		// Read Raw Data Index/Length of Index Information
@@ -464,7 +462,7 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 			} else {
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
-					readRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+					ReadRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
 			}
 		} else if val, present := allPrevSegObjs[objPath]; present {
@@ -503,7 +501,7 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 				// Changed Metadata in this Section
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
-					readRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+					ReadRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
 				objOrder = append(objOrder, objPath)
 			}
@@ -515,7 +513,7 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 			} else if !bytes.Equal(rawDataIndexHeaderBytes, noRawDataValue) {
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
-					readRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
+					ReadRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
 				}
 				objOrder = append(objOrder, objPath)
 			} else {
@@ -533,13 +531,13 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		}
 
 		// Number of Object Properties
-		numProperties := readUint32(file, 0, 1)
+		numProperties := ReadUint32(file, 0, 1)
 		log.Debugf("Number of Object %d Properties: %d\n", i, numProperties)
 
 		// Read Properties
 		for j := uint32(0); j < numProperties; j++ {
 			log.Debugf("Reading Object %d Property %d\n", i, j)
-			property := readProperty(file, 0, 1)
+			property := ReadProperty(file, 0, 1)
 			// if propMap, present := propertyMap[objPath]; present {
 			if _, present := propertyMap[objPath]; present {
 				// Property Maps Exists for Path
@@ -564,7 +562,7 @@ func readMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 // Reads Raw Data Index of a Segment Object
 //
 // Returns RawDataIndex
-func readRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeader []byte) RawDataIndex {
+func ReadRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeader []byte) RawDataIndex {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return by file.Seek in readTDMSRawDataIndex: ", err)
@@ -573,11 +571,11 @@ func readRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeade
 	indexLength := binary.LittleEndian.Uint32(rawDataIndexHeader)
 	log.Debugf("Object Index Length: %d\n", indexLength)
 
-	dataType := tdsDataType(readUint32(file, 0, 1))
+	dataType := tdsDataType(ReadUint32(file, 0, 1))
 	log.Debugf("Object Data Type: %d\n", dataType)
 
 	// must equal 1 for v2.0
-	arrayDimension := readUint32(file, 0, 1)
+	arrayDimension := ReadUint32(file, 0, 1)
 	if arrayDimension != 1 {
 		log.Fatal("Not Valid TDMS 2.0, Data Dimension is not 1")
 	}
@@ -611,18 +609,18 @@ func readRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeade
 }
 
 // Reads a single property from a Segment Object
-func readProperty(file *os.File, offset int64, whence int) Property {
+func ReadProperty(file *os.File, offset int64, whence int) Property {
 	_, err := file.Seek(offset, whence)
 	if err != nil {
 		log.Fatal("Error return from file.Seek in readTDMSObject: ", err)
 	}
 
 	// Property Name
-	propertyName := readString(file, 0, 1)
+	propertyName := ReadString(file, 0, 1)
 	// log.Debugf("Property Name: %s\n", propertyName)
 
 	// Debuged in Hex
-	propertyDataType := readUint32(file, 0, 1)
+	propertyDataType := ReadUint32(file, 0, 1)
 	propertyTdsDataType := tdsDataType(propertyDataType)
 
 	// Position for reading later
@@ -638,17 +636,17 @@ func readProperty(file *os.File, offset int64, whence int) Property {
 	default:
 		log.Fatal("Property Data Type Unkown")
 	case String:
-		valueString = readString(file, 0, 1)
+		valueString = ReadString(file, 0, 1)
 	case Int32:
-		valueString = fmt.Sprintf("%d", readInt32(file, 0, 1))
+		valueString = fmt.Sprintf("%d", ReadInt32(file, 0, 1))
 	case Uint32:
-		valueString = fmt.Sprintf("%d", readUint32(file, 0, 1))
+		valueString = fmt.Sprintf("%d", ReadUint32(file, 0, 1))
 	case Uint64:
 		valueString = fmt.Sprintf("%d", readUint64(file, 0, 1))
 	case DBL:
-		valueString = fmt.Sprintf("%e", readDBL(file, 0, 1))
+		valueString = fmt.Sprintf("%e", ReadDBL(file, 0, 1))
 	case Timestamp:
-		valueString = readTime(file, 0, 1).String()
+		valueString = ReadTime(file, 0, 1).String()
 	}
 
 	return Property{
