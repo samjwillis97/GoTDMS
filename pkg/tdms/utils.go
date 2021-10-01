@@ -321,7 +321,7 @@ func ReadTime(file *os.File, offset int64, whence int) time.Time {
 func CalculateChunks(objects map[string]SegmentObject, nextSegPos uint64, dataPos uint64) uint64 {
 	dataSize := uint64(0)
 	for _, e := range objects {
-		dataSize += e.rawDataIndex.rawDataSize
+		dataSize += e.RawDataIndex.RawDataSize
 	}
 	log.Debugf("Data Size: %d", dataSize)
 
@@ -360,7 +360,7 @@ func ReadAllUniqueTDMSObjects(segments []Segment) []string {
 	pathSet := make(map[string]bool)
 	pathArray := make([]string, 0)
 	for _, seg := range segments {
-		for _, path := range seg.objectOrder {
+		for _, path := range seg.ObjectOrder {
 			exists := pathSet[path]
 			if !(exists) {
 				pathSet[path] = true

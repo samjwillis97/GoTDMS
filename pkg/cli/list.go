@@ -3,11 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
-	"strings"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/samjwillis97/GoTDMS/pkg/tdms"
+	log "github.com/sirupsen/logrus"
 )
 
 func DisplayFile(file *os.File, verbose bool) {
@@ -57,7 +58,7 @@ func DisplayFile(file *os.File, verbose bool) {
 			var properties tdms.Properties
 			for _, val := range segments {
 				//PROPERTIES
-				for path, propMap := range val.propMap {
+				for path, propMap := range val.PropMap {
 					if path == ("/'" + formattedG + "'/'" + formattedC + "'") {
 						for _, propValue := range propMap {
 							properties = append(properties, propValue)
@@ -87,10 +88,163 @@ func DisplayFile(file *os.File, verbose bool) {
 					}
 					propFormatString.WriteString(" %s\t%s\n")
 
-					fmt.Fprintf(writer, propFormatString.String(), val.name, val.stringValue)
+					fmt.Fprintf(writer, propFormatString.String(), val.Name, val.StringValue)
 				}
 			}
 		}
 	}
 	writer.Flush()
 }
+
+func DisplayGroups(file *os.File) {
+	segments, _ := tdms.ReadAllSegments(file)
+
+	paths := tdms.ReadAllUniqueTDMSObjects(segments)
+
+	groups := tdms.GetGroupsFromPathArray(paths)
+
+	for _, group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		fmt.Println(formatted)
+	}
+}
+
+func DisplayGroupChannels(file *os.File, groupName string) {
+	segments, _ := tdms.ReadAllSegments(file)
+
+	paths := tdms.ReadAllUniqueTDMSObjects(segments)
+
+	groups := tdms.GetGroupsFromPathArray(paths)
+
+	groupPresent := false
+	for _, group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == groupName {
+			groupPresent = true
+			log.Debugf("Found matching Group")
+		}
+	}
+
+	var channels []string
+
+	if groupPresent {
+		channels = tdms.GetChannelsFromPathArray(paths, groupName)
+	} else {
+		fmt.Println("File does not contain group named: ", groupName)
+		log.Fatal("Invalid Group Name")
+	}
+
+	for _, channel := range channels {
+		formatted := strings.Replace(channel, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		fmt.Println(formatted)
+	}
+}
+
+func DisplayChannelProperties(file *os.File, groupName string, channelName string) {
+	segments, _ := tdms.ReadAllSegments(file)
+
+	paths := tdms.ReadAllUniqueTDMSObjects(segments)
+
+	groups := tdms.GetGroupsFromPathArray(paths)
+
+	groupPresent := false
+	for _, group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == groupName {
+			groupPresent = true
+			log.Debugf("Found matching Group")
+		}
+	}
+
+	var channels []string
+
+	if groupPresent {
+		channels = tdms.GetChannelsFromPathArray(paths, groupName)
+	} else {
+		fmt.Println("File does not contain group named: ", groupName)
+		log.Fatal("Invalid Group Name")
+	}
+
+	channelPresent := false
+	for _, channel := range channels {
+		formatted := strings.Replace(channel, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == channelName {
+			channelPresent = true
+			log.Debugf("Found matching channel")
+		}
+	}
+
+	var properties tdms.Properties
+	// Get All Property Maps from segmetns containing a match, keep overriding to keep last
+	if channelPresent {
+		for _, val := range segments {
+			for path, propMap := range val.PropMap {
+				if path == ("/'" + groupName + "'/'" + channelName + "'") {
+					for _, propValue := range propMap {
+						properties = append(properties, propValue)
+					}
+				}
+			}
+		}
+	}
+
+	sort.Sort(properties)
+
+	writer := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', tabwriter.AlignRight)
+	for _, val := range properties {
+		fmt.Fprintf(writer, "%s\t%s\n", val.Name, val.StringValue)
+	}
+	writer.Flush()
+}
+
+func DisplayChannelData(file *os.File, groupName string, channelName string) {
+	segments, props := tdms.ReadAllSegments(file)
+
+	paths := tdms.ReadAllUniqueTDMSObjects(segments)
+
+	groups := tdms.GetGroupsFromPathArray(paths)
+
+	groupPresent := false
+	var groupString string
+	for _, group := range groups {
+		formatted := strings.Replace(group, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == groupName {
+			groupPresent = true
+			groupString = group
+			log.Debugf("Found matching Group")
+		}
+	}
+
+	var channels []string
+	var channelString string
+
+	if groupPresent {
+		channels = tdms.GetChannelsFromPathArray(paths, groupName)
+	} else {
+		fmt.Println("File does not contain group named: ", groupName)
+		log.Fatalln("Invalid Group Name")
+	}
+
+	channelPresent := false
+	for _, channel := range channels {
+		formatted := strings.Replace(channel, "/", "", -1)
+		formatted = strings.Replace(formatted, "'", "", -1)
+		if formatted == channelName {
+			channelPresent = true
+			channelString = channel
+			log.Debugf("Found matching channel")
+		}
+	}
+
+	if channelPresent {
+		fullPath := groupString + "/" + channelString
+		DisplayChannelRawData(file, fullPath, -1, 0, segments, props)
+	}
+}
+

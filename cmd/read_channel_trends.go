@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/samjwillis97/GoTDMS/pkg/tdms"
+	"github.com/samjwillis97/GoTDMS/pkg/cli"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +26,7 @@ var readChannelTrendsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		tdms.DisplayChannelData(file, groupName, chanName)
+		cli.DisplayChannelData(file, groupName, chanName)
 		file.Close()
 		return nil
 	},

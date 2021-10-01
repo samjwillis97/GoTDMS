@@ -14,48 +14,48 @@ import (
 // Each Segment of a TDMS Has a Lead In Section
 type LeadInData struct {
 	ToCMask       uint32
-	versionNumber uint32
-	nextSegOffset uint64
-	rawDataOffset uint64
-	nextSegPos    uint64
-	dataPos       uint64
+	VersionNumber uint32
+	NextSegOffset uint64
+	RawDataOffset uint64
+	NextSegPos    uint64
+	DataPos       uint64
 }
 
 // Each Segment of a TDMS Consists of all this information
 type Segment struct {
-	position                 uint64
-	numChunks                uint64
-	objects                  map[string]SegmentObject
-	objectOrder              []string
-	kToCMask                 uint32
-	nextSegPos               uint64
-	dataPos                  uint64
-	finalChunkLengthOverride uint64
-	objectIndex              uint64
-	propMap                  map[string]map[string]Property
+	Position                 uint64
+	NumChunks                uint64
+	Objects                  map[string]SegmentObject
+	ObjectOrder              []string
+	KToCMask                 uint32
+	NextSegPos               uint64
+	DataPos                  uint64
+	FinalChunkLengthOverride uint64
+	ObjectIndex              uint64
+	PropMap                  map[string]map[string]Property
 }
 
 // Required Data for each Object in a Segment
 type SegmentObject struct {
-	rawDataIndexHeader []byte
-	rawDataIndex       RawDataIndex
+	RawDataIndexHeader []byte
+	RawDataIndex       RawDataIndex
 }
 
 // Information from Raw Data Index
 type RawDataIndex struct {
-	dataType       tdsDataType
-	arrayDimension uint32
-	numValues      uint64
-	rawDataSize    uint64
+	DataType       TdsDataType
+	ArrayDimension uint32
+	NumValues      uint64
+	RawDataSize    uint64
 }
 
-type tdsDataType uint64
+type TdsDataType uint64
 
 type Property struct {
-	name          string
-	dataType      tdsDataType
-	valuePosition int64
-	stringValue   string
+	Name          string
+	DataType      TdsDataType
+	ValuePosition int64
+	StringValue   string
 }
 
 type Properties []Property
@@ -66,8 +66,8 @@ func (p Properties) Len() int { return len(p) }
 func (p Properties) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 
 func (p Properties) Less(i, j int) bool {
-	var si string = p[i].name
-	var sj string = p[j].name
+	var si string = p[i].Name
+	var sj string = p[j].Name
 	var si_low = strings.ToLower(si)
 	var sj_low = strings.ToLower(sj)
 	if si_low == sj_low {
@@ -79,43 +79,43 @@ func (p Properties) Less(i, j int) bool {
 // Constants
 
 const (
-	Void       tdsDataType = 0
-	Int8       tdsDataType = 1
-	Int16      tdsDataType = 2
-	Int32      tdsDataType = 3
-	Int64      tdsDataType = 4
-	Uint8      tdsDataType = 5
-	Uint16     tdsDataType = 6
-	Uint32     tdsDataType = 7
-	Uint64     tdsDataType = 8
-	SGL        tdsDataType = 9
-	DBL        tdsDataType = 10
-	EXT        tdsDataType = 11
-	SGLwUnit   tdsDataType = 0x19
-	DBLwUnit   tdsDataType = 0x1A
-	EXTwUnit   tdsDataType = 0x1B
-	String     tdsDataType = 0x20
-	Boolean    tdsDataType = 0x21
-	Timestamp  tdsDataType = 0x44
-	ComplexSGL tdsDataType = 0x08000C
-	ComplexDBL tdsDataType = 0x10000D
-	DAQmx      tdsDataType = 0xFFFFFF
+	Void       TdsDataType = 0
+	Int8       TdsDataType = 1
+	Int16      TdsDataType = 2
+	Int32      TdsDataType = 3
+	Int64      TdsDataType = 4
+	Uint8      TdsDataType = 5
+	Uint16     TdsDataType = 6
+	Uint32     TdsDataType = 7
+	Uint64     TdsDataType = 8
+	SGL        TdsDataType = 9
+	DBL        TdsDataType = 10
+	EXT        TdsDataType = 11
+	SGLwUnit   TdsDataType = 0x19
+	DBLwUnit   TdsDataType = 0x1A
+	EXTwUnit   TdsDataType = 0x1B
+	String     TdsDataType = 0x20
+	Boolean    TdsDataType = 0x21
+	Timestamp  TdsDataType = 0x44
+	ComplexSGL TdsDataType = 0x08000C
+	ComplexDBL TdsDataType = 0x10000D
+	DAQmx      TdsDataType = 0xFFFFFF
 )
 
 const (
-	kTocMetaData        uint32 = 0x2
-	kTocRawData         uint32 = 0x8
-	kTocDAQmxRawData    uint32 = 0x80
-	kTocInterleavedData uint32 = 0x20
-	kTocBigEndian       uint32 = 0x40
-	kTocNewObjList      uint32 = 0x4
+	KTocMetaData        uint32 = 0x2
+	KTocRawData         uint32 = 0x8
+	KTocDAQmxRawData    uint32 = 0x80
+	KTocInterleavedData uint32 = 0x20
+	KTocBigEndian       uint32 = 0x40
+	KTocNewObjList      uint32 = 0x4
 )
 
 var (
-	noRawDataValue            = []byte{255, 255, 255, 255}
-	matchesPreviousValue      = []byte{0, 0, 0, 0}
-	daqmxFormatChangingScaler = []byte{69, 12, 00, 00}
-	daqmxDigitalLineScaler    = []byte{69, 13, 00, 00}
+	NoRawDataValue            = []byte{255, 255, 255, 255}
+	MatchesPreviousValue      = []byte{0, 0, 0, 0}
+	DaqmxFormatChangingScaler = []byte{69, 12, 00, 00}
+	DaqmxDigitalLineScaler    = []byte{69, 13, 00, 00}
 )
 
 // Get All Segments of TDMS File
@@ -155,9 +155,9 @@ func ReadAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) 
 
 		segments = append(segments, newSegment)
 		prevSegment = newSegment
-		segmentPos = newSegment.nextSegPos
+		segmentPos = newSegment.NextSegPos
 
-		for path, val := range newSegment.objects {
+		for path, val := range newSegment.Objects {
 			allPrevSegObjs[path] = val
 		}
 
@@ -171,7 +171,7 @@ func ReadAllSegments(file *os.File) ([]Segment, map[string]map[string]Property) 
 	// Return the latest Properties
 	objProperties := make(map[string]map[string]Property)
 	for _, seg := range segments {
-		for path, propMap := range seg.propMap {
+		for path, propMap := range seg.PropMap {
 			_, pathPresent := objProperties[path]
 			if !pathPresent {
 				objProperties[path] = propMap
@@ -209,10 +209,10 @@ func ReadSegment(file *os.File, offset int64, whence int, prevSegment Segment, a
 
 	// Read TDMS Meta Data objMap, objOrder, propMap := ReadMetaData(file, 0, 1, leadIn, prevSegment, allPrevSegObjs)
 	objMap, objOrder, propMap := ReadMetaData(file, 0, 1, leadIn, prevSegment, allPrevSegObjs)
-	numChunks := CalculateChunks(objMap, leadIn.nextSegPos, leadIn.dataPos)
+	numChunks := CalculateChunks(objMap, leadIn.NextSegPos, leadIn.DataPos)
 
 	// Object Index
-	index := prevSegment.objectIndex + 1
+	index := prevSegment.ObjectIndex + 1
 
 	// TODO: Finish Reading Raw Data
 	// if (0b100000 & leadIn.ToCMask) == 0b100000 {
@@ -243,8 +243,8 @@ func ReadSegment(file *os.File, offset int64, whence int, prevSegment Segment, a
 		objMap,
 		objOrder,
 		leadIn.ToCMask,
-		leadIn.nextSegPos,
-		leadIn.dataPos,
+		leadIn.NextSegPos,
+		leadIn.DataPos,
 		0, //TODO: Implement
 		index,
 		propMap,
@@ -297,7 +297,7 @@ func ReadLeadIn(file *os.File, offset int64, whence int) LeadInData {
 	}
 	tocBitMask := binary.LittleEndian.Uint32(tocBitMaskBytes)
 	log.Debugln("ToC BitMask: ", tocBitMask)
-	if (kTocMetaData & tocBitMask) == kTocMetaData {
+	if (KTocMetaData & tocBitMask) == KTocMetaData {
 		log.Debugln("Segment Contains Meta Data")
 	}
 	if (0b1000 & tocBitMask) == 0b1000 {
@@ -391,21 +391,21 @@ func ReadMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 	propertyMap := make(map[string]map[string]Property)
 
 	// True if no MetaData
-	if (kTocMetaData & leadin.ToCMask) != kTocMetaData {
+	if (KTocMetaData & leadin.ToCMask) != KTocMetaData {
 		log.Debugln("Reuse Previous Segment Metadata")
-		return prevSegment.objects, prevSegment.objectOrder, prevSegment.propMap
+		return prevSegment.Objects, prevSegment.ObjectOrder, prevSegment.PropMap
 	}
 
 	// TODO: Big Endianness with TocMask
 
-	prevSegObjectNum := len(prevSegment.objects)
+	prevSegObjectNum := len(prevSegment.Objects)
 
-	if ((kTocNewObjList & leadin.ToCMask) == kTocNewObjList) || prevSegObjectNum == 0 {
+	if ((KTocNewObjList & leadin.ToCMask) == KTocNewObjList) || prevSegObjectNum == 0 {
 	} else {
 		// There can be a list of new objects that are appended,
 		// or previous objects that are repeated with changed properties
-		objMap = prevSegment.objects
-		objOrder = prevSegment.objectOrder
+		objMap = prevSegment.Objects
+		objOrder = prevSegment.ObjectOrder
 	}
 
 	log.Debugln("READING METADATA")
@@ -441,21 +441,21 @@ func ReadMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		if val, present := objMap[objPath]; present {
 			log.Debugf("Updating Existing %s Object\n", objPath)
 			// Current Header says No Data
-			if bytes.Equal(rawDataIndexHeaderBytes, noRawDataValue) {
+			if bytes.Equal(rawDataIndexHeaderBytes, NoRawDataValue) {
 				// Matched Header says Has Data
-				if !bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
+				if !bytes.Equal(val.RawDataIndexHeader, NoRawDataValue) {
 					objMap[objPath] = SegmentObject{
 						rawDataIndexHeaderBytes,
-						val.rawDataIndex,
+						val.RawDataIndex,
 					}
 				}
 				// Current Header Matches Previous
-			} else if bytes.Equal(rawDataIndexHeaderBytes, matchesPreviousValue) {
+			} else if bytes.Equal(rawDataIndexHeaderBytes, MatchesPreviousValue) {
 				// Previous has No Raw Data
-				if bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
+				if bytes.Equal(val.RawDataIndexHeader, NoRawDataValue) {
 					objMap[objPath] = SegmentObject{
 						rawDataIndexHeaderBytes,
-						val.rawDataIndex,
+						val.RawDataIndex,
 					}
 				}
 				// New Segment Metadata OR Updates to Existing Data
@@ -468,14 +468,14 @@ func ReadMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		} else if val, present := allPrevSegObjs[objPath]; present {
 			log.Debugf("Reusing Previous %s Object\n", objPath)
 			// reuse previous object
-			if bytes.Equal(rawDataIndexHeaderBytes, noRawDataValue) {
+			if bytes.Equal(rawDataIndexHeaderBytes, NoRawDataValue) {
 				// Reuse Segment  But Leave Data Index Information as Set Previously
-				if bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
+				if bytes.Equal(val.RawDataIndexHeader, NoRawDataValue) {
 					// Previous Segment has Data
 					// Copy Previos to Current, Leaving Header
 					objMap[objPath] = SegmentObject{
 						rawDataIndexHeaderBytes,
-						val.rawDataIndex,
+						val.RawDataIndex,
 					}
 					objOrder = append(objOrder, objPath)
 				} else {
@@ -484,12 +484,12 @@ func ReadMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 					objOrder = append(objOrder, objPath)
 				}
 				// Matches Previous
-			} else if bytes.Equal(rawDataIndexHeaderBytes, matchesPreviousValue) {
-				if !bytes.Equal(val.rawDataIndexHeader, noRawDataValue) {
+			} else if bytes.Equal(rawDataIndexHeaderBytes, MatchesPreviousValue) {
+				if !bytes.Equal(val.RawDataIndexHeader, NoRawDataValue) {
 					// Copy Previos to Current, Leaving Header
 					objMap[objPath] = SegmentObject{
 						rawDataIndexHeaderBytes,
-						val.rawDataIndex,
+						val.RawDataIndex,
 					}
 					objOrder = append(objOrder, objPath)
 				} else {
@@ -508,9 +508,9 @@ func ReadMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 		} else {
 			log.Debugf("New Segment Object: %s\n", objPath)
 			// New Segment Object
-			if bytes.Equal(rawDataIndexHeaderBytes, matchesPreviousValue) {
+			if bytes.Equal(rawDataIndexHeaderBytes, MatchesPreviousValue) {
 				log.Fatalln("Raw Data Index says to reuse previous, though this object has not been seen before: ", objPath)
-			} else if !bytes.Equal(rawDataIndexHeaderBytes, noRawDataValue) {
+			} else if !bytes.Equal(rawDataIndexHeaderBytes, NoRawDataValue) {
 				objMap[objPath] = SegmentObject{
 					rawDataIndexHeaderBytes,
 					ReadRawDataIndex(file, 0, 1, rawDataIndexHeaderBytes),
@@ -541,15 +541,15 @@ func ReadMetaData(file *os.File, offset int64, whence int, leadin LeadInData, pr
 			// if propMap, present := propertyMap[objPath]; present {
 			if _, present := propertyMap[objPath]; present {
 				// Property Maps Exists for Path
-				propertyMap[objPath][property.name] = property
+				propertyMap[objPath][property.Name] = property
 			} else {
 				// Property Map Doesn't exist for Path yet
 				initMap := map[string]Property{
-					property.name: {
-						property.name,
-						property.dataType,
-						property.valuePosition,
-						property.stringValue,
+					property.Name: {
+						property.Name,
+						property.DataType,
+						property.ValuePosition,
+						property.StringValue,
 					},
 				}
 				propertyMap[objPath] = initMap
@@ -571,7 +571,7 @@ func ReadRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeade
 	indexLength := binary.LittleEndian.Uint32(rawDataIndexHeader)
 	log.Debugf("Object Index Length: %d\n", indexLength)
 
-	dataType := tdsDataType(ReadUint32(file, 0, 1))
+	dataType := TdsDataType(ReadUint32(file, 0, 1))
 	log.Debugf("Object Data Type: %d\n", dataType)
 
 	// must equal 1 for v2.0
@@ -584,7 +584,7 @@ func ReadRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeade
 	log.Debugf("Object Number of Values: %d\n", numValues)
 
 	dataSize := 0
-	switch tdsDataType(dataType) {
+	switch TdsDataType(dataType) {
 	case Int8, Uint8, Boolean:
 		dataSize = 1
 	case Int16, Uint16:
@@ -601,7 +601,7 @@ func ReadRawDataIndex(file *os.File, offset int64, whence int, rawDataIndexHeade
 	log.Debugf("Channel Raw Data Size: %d\n", channelRawDataSize)
 
 	return RawDataIndex{
-		tdsDataType(dataType),
+		TdsDataType(dataType),
 		arrayDimension,
 		numValues,
 		channelRawDataSize,
@@ -621,7 +621,7 @@ func ReadProperty(file *os.File, offset int64, whence int) Property {
 
 	// Debuged in Hex
 	propertyDataType := ReadUint32(file, 0, 1)
-	propertyTdsDataType := tdsDataType(propertyDataType)
+	propertyTdsDataType := TdsDataType(propertyDataType)
 
 	// Position for reading later
 	valuePosition, _ := file.Seek(0, 1)

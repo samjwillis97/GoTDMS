@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/samjwillis97/GoTDMS/pkg/tdms"
+	"github.com/samjwillis97/GoTDMS/pkg/cli"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +25,7 @@ var listGroupsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		tdms.DisplayGroups(file)
+		cli.DisplayGroups(file)
 		file.Close()
 		return nil
 	},
